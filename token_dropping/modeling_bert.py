@@ -483,14 +483,17 @@ class BertLayer(nn.Module):
         self.intermediate = BertIntermediate(config)
         self.output = BertOutput(config)
         self.layer_id = layer_id
-        
+
         import token_dropping
         token_dropping_config: token_dropping.config.TokenDroppingConfig = config.token_dropping
         self.token_pruning_strategy = token_dropping_config.token_pruning_strategy
         self.num_preserved_tokens = self.token_pruning_strategy.get(self.layer_id, -1)
         logger.warning('Block %d - preserve %d tokens + new token + class token', layer_id, self.num_preserved_tokens)
         if self.num_preserved_tokens > 0:
-            router_cls = getattr(token_dropping.routing, f'Routerv{token_dropping_config.router_version}')
+            if token_dropping_config.router_version.isdigit():
+                router_cls = getattr(token_dropping.routing, f'Routerv{token_dropping_config.router_version}')
+            else:
+                router_cls = getattr(token_dropping.routing, token_dropping_config.router_version)
             self.router_token = router_cls(config, self.num_preserved_tokens)
 
     def forward(
@@ -610,7 +613,7 @@ class BertEncoder(nn.Module):
             attention_mask = torch.cat([
                 attention_mask,
                 torch.zeros((hidden_states.shape[0], 1, 1, 1), device=attention_mask.device, dtype=attention_mask.dtype),
-            ],dim=-1
+            ], dim=-1
             )
 
         new_attention_mask = attention_mask

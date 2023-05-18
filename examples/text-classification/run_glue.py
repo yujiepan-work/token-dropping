@@ -368,6 +368,7 @@ def main():
     token_dropping_args = token_dropping.config.parse_config(model_args.token_dropping_json_path)
     config.token_dropping = token_dropping_args
     config.token_dropping_args = token_dropping_args
+    config = token_dropping.config.patch_config(config)
     
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
@@ -559,7 +560,7 @@ def main():
                         "weight_decay": 0.0,
                     },
                 ]
-                logger.warning(optimizer_grouped_parameters)
+                # logger.warning(optimizer_grouped_parameters)
                 optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(self.args)
                 self.optimizer = optimizer_cls(optimizer_grouped_parameters, **optimizer_kwargs)
             return self.optimizer

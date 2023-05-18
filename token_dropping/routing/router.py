@@ -356,4 +356,3 @@ class Routerv4(torch.nn.Module):
             dim=-1,
         )  # B,1,1,L+1
         return final_token, final_attention_mask
-

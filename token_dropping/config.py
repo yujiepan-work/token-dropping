@@ -31,8 +31,8 @@ class TokenDroppingConfig:
         default=False,
         metadata={"help": "add one learnable token at the beginning"},
     )
-    router_version: int = field(
-        default=1,
+    router_version: str = field(
+        default='1',
         metadata={"help": "None"},
     )
     freeze_model: bool = field(
@@ -51,4 +51,18 @@ class TokenDroppingConfig:
 def parse_config(json_path: str) -> TokenDroppingConfig:
     parser = HfArgumentParser((TokenDroppingConfig,))
     config = parser.parse_json_file(json_file=os.path.abspath(json_path))[0]
+    return config
+
+
+def patch_config(config):
+    original_fn = config.__class__.to_dict
+
+    def new_fn(self):
+        output = original_fn(self)
+        for k in ['token_dropping', 'token_dropping_args']:
+            if k in output:
+                del output[k]
+        return output
+
+    config.__class__.to_dict = new_fn
     return config

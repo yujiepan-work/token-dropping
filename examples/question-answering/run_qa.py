@@ -46,10 +46,10 @@ from transformers import (
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
-
+import token_dropping
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-check_min_version("4.28.0")
+# check_min_version("4.28.0")
 
 require_version("datasets>=1.8.0", "To fix: pip install -r examples/pytorch/question-answering/requirements.txt")
 
@@ -87,6 +87,9 @@ class ModelArguments:
                 "with private models)."
             )
         },
+    )
+    token_dropping_json_path: str = field(
+        default=''
     )
 
 
@@ -324,6 +327,11 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
+    token_dropping_args = token_dropping.config.parse_config(model_args.token_dropping_json_path)
+    config.token_dropping = token_dropping_args
+    config.token_dropping_args = token_dropping_args
+    config = token_dropping.config.patch_config(config)
+
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
         cache_dir=model_args.cache_dir,
@@ -331,7 +339,7 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
-    model = AutoModelForQuestionAnswering.from_pretrained(
+    model = token_dropping.modeling_bert.BertForQuestionAnswering.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
         config=config,
@@ -602,6 +610,14 @@ def main():
 
     def compute_metrics(p: EvalPrediction):
         return metric.compute(predictions=p.predictions, references=p.label_ids)
+
+    if config.token_dropping_args.freeze_model:
+        for name, p in model.named_parameters():
+            if 'router_' in name:
+                p.requires_grad_(True)
+                logger.warning(name)
+            else:
+                p.requires_grad_(False)
 
     # Initialize our Trainer
     trainer = QuestionAnsweringTrainer(
