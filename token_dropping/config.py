@@ -1,6 +1,7 @@
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass, field, asdict
+from typing import Optional, Union
 import os
+import json
 
 from transformers import (
     AutoConfig,
@@ -9,10 +10,14 @@ from transformers import (
     DataCollatorWithPadding,
     EvalPrediction,
     HfArgumentParser,
+    logging,
 )
-
+from transformers.utils import (
+    logging,
+)
 # pylint: disable=missing-function-docstring
 
+logger = logging.get_logger(__name__)
 
 @dataclass
 class TokenDroppingConfig:
@@ -23,7 +28,7 @@ class TokenDroppingConfig:
         default=False,
         metadata={"help": "None"},
     )
-    token_pruning_strategy: str = field(
+    token_pruning_strategy: Union[str, dict] = field(
         default="1:1",
         metadata={"help": "token_pruning_strategy"},
     )
@@ -46,6 +51,7 @@ class TokenDroppingConfig:
     def __post_init__(self):
         strategy = self.token_pruning_strategy.replace('_', ',').replace('-', ':')
         self.token_pruning_strategy = eval(f'{{{strategy}}}')  # pylint: disable=eval-used
+        logger.warning('Token dropping args: \n%s', json.dumps(asdict(self), indent=2))
 
 
 def parse_config(json_path: str) -> TokenDroppingConfig:

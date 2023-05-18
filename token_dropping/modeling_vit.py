@@ -216,6 +216,7 @@ class ViTSelfAttention(nn.Module):
 
         # Normalize the attention scores to probabilities.
         attention_probs = nn.functional.softmax(attention_scores, dim=-1)
+        attention_probs_before_dropout = attention_probs
 
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
@@ -233,7 +234,7 @@ class ViTSelfAttention(nn.Module):
 
         outputs = (context_layer, attention_probs) if output_attentions else (context_layer,)
 
-        return outputs
+        return outputs, attention_probs_before_dropout
 
 
 class ViTSelfOutput(nn.Module):
@@ -285,12 +286,12 @@ class ViTAttention(nn.Module):
         head_mask: Optional[torch.Tensor] = None,
         output_attentions: bool = False,
     ) -> Union[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor]]:
-        self_outputs = self.attention(hidden_states, head_mask, output_attentions)
+        self_outputs, attention_probs_before_dropout = self.attention(hidden_states, head_mask, output_attentions)
 
         attention_output = self.output(self_outputs[0], hidden_states)
 
         outputs = (attention_output,) + self_outputs[1:]  # add attentions if we output them
-        return outputs
+        return outputs, attention_probs_before_dropout
 
 
 class ViTIntermediate(nn.Module):
@@ -327,7 +328,7 @@ class ViTOutput(nn.Module):
 class ViTLayer(nn.Module):
     """This corresponds to the Block class in the timm implementation."""
 
-    def __init__(self, config: ViTConfig) -> None:
+    def __init__(self, config: ViTConfig, layer_id=None) -> None:
         super().__init__()
         self.chunk_size_feed_forward = config.chunk_size_feed_forward
         self.seq_len_dim = 1
@@ -336,6 +337,20 @@ class ViTLayer(nn.Module):
         self.output = ViTOutput(config)
         self.layernorm_before = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.layernorm_after = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.layer_id = layer_id
+
+        import token_dropping
+        token_dropping_args: token_dropping.config.TokenDroppingConfig = config.token_dropping
+        self.token_pruning_strategy = token_dropping_args.token_pruning_strategy
+        self.num_preserved_tokens = self.token_pruning_strategy.get(self.layer_id, -1)
+        logger.warning('Block %d - preserve %d [tokens + new token + class token]', layer_id, self.num_preserved_tokens)
+        if self.num_preserved_tokens > 0:
+            if token_dropping_args.router_version.isdigit():
+                router_cls = getattr(token_dropping.routing, f'Routerv{token_dropping_args.router_version}')
+            else:
+                router_cls = getattr(token_dropping.routing, token_dropping_args.router_version)
+            self.router_token = router_cls(config, self.num_preserved_tokens)
+
 
     def forward(
         self,
@@ -343,7 +358,7 @@ class ViTLayer(nn.Module):
         head_mask: Optional[torch.Tensor] = None,
         output_attentions: bool = False,
     ) -> Union[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor]]:
-        self_attention_outputs = self.attention(
+        self_attention_outputs, attention_probs_before_dropout = self.attention(
             self.layernorm_before(hidden_states),  # in ViT, layernorm is applied before self-attention
             head_mask,
             output_attentions=output_attentions,
@@ -363,6 +378,10 @@ class ViTLayer(nn.Module):
 
         outputs = (layer_output,) + outputs
 
+        if self.num_preserved_tokens > 0:
+            new_output, _ = self.router_token(layer_output, None, attention_probs_before_dropout)
+            return (new_output, *outputs[1:])
+
         return outputs
 
 
@@ -370,7 +389,7 @@ class ViTEncoder(nn.Module):
     def __init__(self, config: ViTConfig) -> None:
         super().__init__()
         self.config = config
-        self.layer = nn.ModuleList([ViTLayer(config) for _ in range(config.num_hidden_layers)])
+        self.layer = nn.ModuleList([ViTLayer(config, i) for i in range(config.num_hidden_layers)])
         self.gradient_checkpointing = False
 
     def forward(

@@ -357,6 +357,7 @@ def main():
         dataset["validation"].set_transform(val_transforms)
 
 
+    logger.warning('Learnable parameters:')
     if config.token_dropping_args.freeze_model:
         for name, p in model.named_parameters():
             if 'router_' in name:
@@ -390,7 +391,7 @@ def main():
         trainer.save_state()
 
     # Evaluation
-    if training_args.do_eval:
+    if training_args.do_eval and not token_dropping_args.export_onnx:
         metrics = trainer.evaluate()
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
@@ -406,7 +407,44 @@ def main():
         trainer.push_to_hub(**kwargs)
     else:
         trainer.create_model_card(**kwargs)
+    if token_dropping_args.export_onnx:
+        export_model(trainer)
+
+
+
+def export_model(trainer: Trainer):
+    import torch
+    import torch.onnx
+    from pathlib import Path
+    # Input to the model
+    device = None
+    for p in trainer.model.parameters():
+        device = p.device
+        break
+    input_ = {}
+    for data in trainer.get_eval_dataloader():
+        for k, v in data.items():
+            if 'label' not in k and 'position' not in k:
+                input_[k] = v[:1].to(device)
+                print(k, input_[k].shape)
+        break
+    trainer.model.eval()
+    torch_out = trainer.model(**input_)
+    # Export the model
+    torch.onnx.export(trainer.model,               # model being run
+                    tuple(input_.values()),                         # model input (or a tuple for multiple inputs)
+                    Path(trainer.args.output_dir, "model.onnx").as_posix(),   # where to save the model (can be a file or file-like object)
+                    export_params=True,        # store the trained parameter weights inside the model file
+                    opset_version=11,          # the ONNX version to export the model to
+                    do_constant_folding=True,  # whether to execute constant folding for optimization
+                    # input_names = ['input'],   # the model's input names
+                    # output_names = ['output'], # the model's output names
+                    # dynamic_axes={'input' : {0 : 'batch_size'},    # variable length axes
+                    #                 'output' : {0 : 'batch_size'}}
+    ) 
+
 
 
 if __name__ == "__main__":
     main()
+
