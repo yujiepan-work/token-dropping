@@ -3,6 +3,7 @@ logs/
 wandb/
 mlruns/
 .vscode/
+scripts/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

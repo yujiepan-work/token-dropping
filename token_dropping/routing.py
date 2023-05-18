@@ -1,15 +1,14 @@
 import math
 import os
-from typing import Optional, Tuple
 from pathlib import Path
+from typing import Optional, Tuple
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
-
-# int(os.environ.get('YUJIE_PRUNE_K', '15'))
+import token_dropping
 
 ALL_CACHE = []
 
@@ -71,12 +70,13 @@ class MyMultiHeadAttention(nn.Module):
         return out, avg_scores
 
 
-class Router(torch.nn.Module):
+class Routerv1(torch.nn.Module):
     def __init__(self, config, num_preserved_tokens) -> None:
         super().__init__()
         self.K = num_preserved_tokens
         self.config = config
-        if config.use_smaller_router:
+        self.token_dropping_args: token_dropping.config.TokenDroppingConfig = config.token_dropping
+        if self.token_dropping_args.use_smaller_router:
             self.attention = MyMultiHeadAttention(
                 query_dim=config.hidden_size, key_dim=config.hidden_size,
                 num_units=256, num_heads=4, output_dim=config.hidden_size,

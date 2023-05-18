@@ -483,21 +483,15 @@ class BertLayer(nn.Module):
         self.intermediate = BertIntermediate(config)
         self.output = BertOutput(config)
         self.layer_id = layer_id
-        self.token_pruning_strategy = eval('{' + config.token_pruning_strategy.replace('_', ',').replace('-', ':') + '}')
+        
+        import token_dropping
+        token_dropping_config: token_dropping.config.TokenDroppingConfig = config.token_dropping
+        self.token_pruning_strategy = token_dropping_config.token_pruning_strategy
         self.num_preserved_tokens = self.token_pruning_strategy.get(self.layer_id, -1)
         logger.warning('Block %d - preserve %d tokens + new token + class token', layer_id, self.num_preserved_tokens)
         if self.num_preserved_tokens > 0:
-            from .routing import Router, Routerv2, Routerv3, Routerv4
-            if config.router_version == 1:
-                self.router_token = Router(config, self.num_preserved_tokens)
-            elif config.router_version == 2:
-                self.router_token = Routerv2(config, self.num_preserved_tokens)
-            elif config.router_version == 3:
-                self.router_token = Routerv3(config, self.num_preserved_tokens)
-            elif config.router_version == 4:
-                self.router_token = Routerv4(config, self.num_preserved_tokens)
-            else:
-                raise NotImplementedError()
+            router_cls = getattr(token_dropping.routing, f'Routerv{token_dropping_config.router_version}')
+            self.router_token = router_cls(config, self.num_preserved_tokens)
 
     def forward(
         self,
@@ -580,7 +574,7 @@ class BertEncoder(nn.Module):
         self.config = config
         self.layer = nn.ModuleList([BertLayer(config, i) for i in range(config.num_hidden_layers)])
         self.gradient_checkpointing = False
-        if config.add_prompt_token:
+        if config.token_dropping_args.add_prompt_token:
             self.router_helper_token = nn.Parameter(torch.randn(1, 1, config.hidden_size))
 
     def forward(
@@ -610,7 +604,7 @@ class BertEncoder(nn.Module):
         next_decoder_cache = () if use_cache else None
 
         # add new token at beginning
-        if self.config.add_prompt_token:
+        if self.config.token_dropping_args.add_prompt_token:
             router_helper_token = self.router_helper_token.repeat(hidden_states.shape[0], 1, 1)
             hidden_states = torch.cat([hidden_states, router_helper_token], dim=1)  # [B, L+1, D]
             attention_mask = torch.cat([
