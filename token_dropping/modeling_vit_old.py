@@ -194,7 +194,6 @@ class ViTSelfAttention(nn.Module):
         self.value = nn.Linear(config.hidden_size, self.all_head_size, bias=config.qkv_bias)
 
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
-        self.config = config
 
     def transpose_for_scores(self, x: torch.Tensor) -> torch.Tensor:
         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
@@ -202,8 +201,7 @@ class ViTSelfAttention(nn.Module):
         return x.permute(0, 2, 1, 3)
 
     def forward(
-        self, hidden_states, head_mask: Optional[torch.Tensor] = None, output_attentions: bool = False,
-        tome_size: Optional[torch.Tensor] = None,
+        self, hidden_states, head_mask: Optional[torch.Tensor] = None, output_attentions: bool = False
     ) -> Union[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor]]:
         mixed_query_layer = self.query(hidden_states)
 
@@ -215,11 +213,6 @@ class ViTSelfAttention(nn.Module):
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
 
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
-        # if tome_size is not None:
-        #     import token_dropping
-        #     token_dropping_config: token_dropping.config.TokenDroppingConfig = self.config.token_dropping
-        #     if token_dropping_config.tome_force_r > 0:
-        #         attention_scores = attention_scores + torch.log(tome_size)
 
         # Normalize the attention scores to probabilities.
         attention_probs = nn.functional.softmax(attention_scores, dim=-1)
@@ -241,7 +234,7 @@ class ViTSelfAttention(nn.Module):
 
         outputs = (context_layer, attention_probs) if output_attentions else (context_layer,)
 
-        return outputs, attention_probs_before_dropout, key_layer
+        return outputs, attention_probs_before_dropout
 
 
 class ViTSelfOutput(nn.Module):
@@ -292,14 +285,13 @@ class ViTAttention(nn.Module):
         hidden_states: torch.Tensor,
         head_mask: Optional[torch.Tensor] = None,
         output_attentions: bool = False,
-        tome_size: Optional[torch.Tensor] = None,
     ) -> Union[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor]]:
-        self_outputs, attention_probs_before_dropout, key_layer = self.attention(hidden_states, head_mask, output_attentions, tome_size=tome_size)
+        self_outputs, attention_probs_before_dropout = self.attention(hidden_states, head_mask, output_attentions)
 
         attention_output = self.output(self_outputs[0], hidden_states)
 
         outputs = (attention_output,) + self_outputs[1:]  # add attentions if we output them
-        return outputs, attention_probs_before_dropout, key_layer
+        return outputs, attention_probs_before_dropout
 
 
 class ViTIntermediate(nn.Module):
@@ -365,29 +357,17 @@ class ViTLayer(nn.Module):
         hidden_states: torch.Tensor,
         head_mask: Optional[torch.Tensor] = None,
         output_attentions: bool = False,
-        tome_size: Optional[torch.Tensor] = None,
     ) -> Union[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor]]:
-        import token_dropping
-        if not self.training:
-            token_dropping.utils.temp_storage[self.layer_id].append(hidden_states.shape[1])
-
-        self_attention_outputs, attention_probs_before_dropout, key_layer = self.attention(
+        self_attention_outputs, attention_probs_before_dropout = self.attention(
             self.layernorm_before(hidden_states),  # in ViT, layernorm is applied before self-attention
             head_mask,
             output_attentions=output_attentions,
-            tome_size=tome_size,
         )
         attention_output = self_attention_outputs[0]
         outputs = self_attention_outputs[1:]  # add self attentions if we output attention weights
 
         # first residual connection
         hidden_states = attention_output + hidden_states
-
-        if self.num_preserved_tokens > 0:
-            hidden_states, _, new_tome_size = self.router_token(hidden_states, None, attention_probs_before_dropout, key_layer, tome_size)
-        else:
-            new_tome_size = tome_size
-
 
         # in ViT, layernorm is also applied after self-attention
         layer_output = self.layernorm_after(hidden_states)
@@ -398,7 +378,11 @@ class ViTLayer(nn.Module):
 
         outputs = (layer_output,) + outputs
 
-        return outputs, new_tome_size
+        if self.num_preserved_tokens > 0:
+            new_output, _ = self.router_token(layer_output, None, attention_probs_before_dropout)
+            return (new_output, *outputs[1:])
+
+        return outputs
 
 
 class ViTEncoder(nn.Module):
@@ -418,8 +402,6 @@ class ViTEncoder(nn.Module):
     ) -> Union[tuple, BaseModelOutput]:
         all_hidden_states = () if output_hidden_states else None
         all_self_attentions = () if output_attentions else None
-
-        new_tome_size = torch.ones((hidden_states.shape[0], hidden_states.shape[1], 1), device=hidden_states.device, dtype=hidden_states.dtype)
 
         for i, layer_module in enumerate(self.layer):
             if output_hidden_states:
@@ -441,14 +423,13 @@ class ViTEncoder(nn.Module):
                     layer_head_mask,
                 )
             else:
-                layer_outputs, new_tome_size = layer_module(hidden_states, layer_head_mask, output_attentions, tome_size=new_tome_size)
+                layer_outputs = layer_module(hidden_states, layer_head_mask, output_attentions)
 
             hidden_states = layer_outputs[0]
 
             if output_attentions:
                 all_self_attentions = all_self_attentions + (layer_outputs[1],)
 
-        # print(hidden_states.shape)
         if output_hidden_states:
             all_hidden_states = all_hidden_states + (hidden_states,)
 

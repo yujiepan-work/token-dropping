@@ -22,13 +22,14 @@ class MyMultiHeadAttention(nn.Module):
         scores -- [h, N, T_q, T_k]
     '''
 
-    def __init__(self, query_dim, key_dim, num_units, num_heads, output_dim):
+    def __init__(self, query_dim, key_dim, num_units, num_heads, output_dim, query_augment: int = 1):
 
         super().__init__()
         self.num_units = num_units
         self.num_heads = num_heads
         self.key_dim = key_dim
-        self.W_query = nn.Linear(in_features=query_dim, out_features=num_units, bias=False)
+        self.query_augment = query_augment
+        self.W_query = nn.Linear(in_features=query_dim, out_features=num_units * query_augment, bias=False)
         self.W_key = nn.Linear(in_features=key_dim, out_features=num_units, bias=False)
         self.W_value = nn.Linear(in_features=key_dim, out_features=num_units, bias=False)
         self.W_output = nn.Linear(in_features=num_units, out_features=output_dim, bias=True)
@@ -38,7 +39,8 @@ class MyMultiHeadAttention(nn.Module):
                 need_weights=True,
                 average_attn_weights=True,
                 ):
-        querys = self.W_query(query)  # [N, T_q, num_units]
+        querys: torch.Tensor = self.W_query(query)  # [N, T_q, num_units]
+        querys = querys.reshape(querys.shape[0], querys.shape[1] * self.query_augment, -1)
         keys = self.W_key(key)  # [N, T_k, num_units]
         values = self.W_value(value)
 

@@ -47,6 +47,27 @@ class TokenDroppingConfig:
     use_smaller_router: bool = field(
         default=True,
     )
+    tome_last_len: int = field(
+        default=-1,
+    )
+    tome_force_r: int = field(
+        default=-1,
+    )
+    num_new_token: int = field(
+        default=1
+    )
+    attention_unit: int = field(
+        default=256,
+    )
+    attention_head_dim: int = field(
+        default=64,
+    )
+    mask_loss_alpha: float = field(
+        default=0.5,
+    )
+    router_before_ffn: bool = field(
+        default=True
+    )
 
     def __post_init__(self):
         strategy = self.token_pruning_strategy.replace('_', ',').replace('-', ':')

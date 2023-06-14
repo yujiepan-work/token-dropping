@@ -595,7 +595,7 @@ class BertLayer(nn.Module):
         if self.num_preserved_tokens > 0 and not self.token_dropping_config.router_before_ffn:
             _results_tuple = self.router_token(layer_output, attention_mask, self_attention_scores, key_layer, tome_size)
             new_layer_output, new_attention_mask, new_tome_size = _results_tuple[:3]
-            outputs = (new_layer_output,) + outputs[1:]
+            outputs[0] = new_layer_output
             new_learnable_01mask = _results_tuple[3] if len(_results_tuple) >= 4 else None
 
         final_01mask = None
@@ -685,8 +685,15 @@ class BertEncoder(nn.Module):
             print(tome_r_config)
 
         for i, layer_module in enumerate(self.layer):
-            mask_loss.append((learnable_01mask.sum(dim=-1, keepdim=True) / ori_seq_len).mean())
+            if i == 0:
+                mask_loss.append((learnable_01mask.sum(dim=-1, keepdim=True) / ori_seq_len).mean())
             
+            if i>0 and self.layer[i-1].num_preserved_tokens > 0:
+                learnable_01mask_bool = learnable_01mask.bool()
+                hidden_states = hidden_states[learnable_01mask_bool].reshape(1, -1, hidden_states.shape[-1])
+                new_attention_mask = torch.zeros((1, 1, 1, hidden_states.shape[1]), dtype=hidden_states.dtype, device=hidden_states.device)
+                learnable_01mask = torch.ones((1, hidden_states.shape[1]), dtype=hidden_states.dtype, device=hidden_states.device)
+
             if 1 <= i <= 10 and self.config.token_dropping_args.tome_last_len > 0:
                 layer_module.router_token.force_r = tome_r_config[i]
 
@@ -725,7 +732,7 @@ class BertEncoder(nn.Module):
                     learnable_01mask,
                 )
                 import random
-                if (i == 11) and (random.randint(0, 80) % 77 == 0):
+                if (i == 11) and (random.randint(0, 80) % 77 == 0) and 0:
                     print('layer', i, 'preserve', learnable_01mask.sum(dim=-1)[:10].detach(), flush=True)
 
             hidden_states = layer_outputs[0]

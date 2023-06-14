@@ -40,7 +40,13 @@ class RouterQuantile(torch.nn.Module):
         class_token = hidden_states[:, :1, :]
         class_attention_mask = torch.zeros((B, 1, 1, 1), device=device, dtype=dtype)
 
-        importance_scores = self_attention_scores.mean(dim=1).sum(dim=1)  # B * L
+        # importance_scores = self_attention_scores.mean(dim=1).sum(dim=1)  # B * L
+        # importance_scores = self_attention_scores.mean(dim=1)[:,0,:] # B * L
+
+        self_attention_scores_non_self = self_attention_scores.mean(dim=1).detach()
+        for i in range(self_attention_scores_non_self.shape[-1]):
+            self_attention_scores_non_self[:, i, i] = 0.
+        importance_scores = self_attention_scores_non_self.sum(dim=1)  # B * L
         important_indices = torch.topk(importance_scores, K, dim=-1).indices  # [B, K]
         important_token_mask = (
             torch.zeros((B, L), device=device, dtype=dtype)
@@ -48,7 +54,14 @@ class RouterQuantile(torch.nn.Module):
             .bool()
         )  # [B, L]
 
-        preserved_tokens = hidden_states[important_token_mask].view(B, K, D)
+
+        # token merging
+        from token_dropping.routing.tome import bipartite_soft_matching
+        merge, _ = bipartite_soft_matching(hidden_states, r=L-K)
+        preserved_tokens = merge(hidden_states)
+        print(preserved_tokens.shape)
+
+        # preserved_tokens = hidden_states[important_token_mask].view(B, K, D)
         if attention_mask is not None:
             preserved_attention_mask = attention_mask[important_token_mask.unsqueeze(1).unsqueeze(1)].view(B, 1, 1, K)
 
@@ -64,10 +77,12 @@ class RouterQuantile(torch.nn.Module):
             key_padding_mask = None
         else:
             key_padding_mask = (attention_mask.squeeze(1).squeeze(1) < -10.0).bool()  # True means should be masked, [B,L]
+        unpreserved_tokens = hidden_states[~important_token_mask].view(B, -1, D)
+
         new_token, attention_weights = self.attention(
             sentences,
-            hidden_states,
-            hidden_states,
+            unpreserved_tokens,
+            unpreserved_tokens,
             key_padding_mask=key_padding_mask,
             need_weights=True,
             average_attn_weights=True,

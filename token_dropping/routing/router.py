@@ -330,7 +330,7 @@ class Routerv4(torch.nn.Module):
         class_token = hidden_states[:, :1, :]
         class_attention_mask = torch.zeros((B, 1, 1, 1), device=attention_mask.device, dtype=attention_mask.dtype)
 
-        K = self.K
+        K = min(self.K, L)
         importance_scores = self_attention_scores.mean(dim=1).sum(dim=1)  # B * L
         important_indices = torch.topk(importance_scores, K, dim=-1).indices  # [B, 15]
         important_token_mask = (
@@ -355,4 +355,5 @@ class Routerv4(torch.nn.Module):
             ],
             dim=-1,
         )  # B,1,1,L+1
+        print(final_token.shape)
         return final_token, final_attention_mask

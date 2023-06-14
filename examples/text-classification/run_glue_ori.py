@@ -45,10 +45,10 @@ from transformers import (
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
-import token_dropping
+
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-# check_min_version("4.29.0.dev0")
+# check_min_version("4.30.0.dev0")
 
 require_version("datasets>=1.8.0", "To fix: pip install -r examples/pytorch/text-classification/requirements.txt")
 
@@ -201,9 +201,7 @@ class ModelArguments:
         default=False,
         metadata={"help": "Will enable to load a pretrained model whose head dimensions are different."},
     )
-    token_dropping_json_path: str = field(
-        default=''
-    )
+
 
 def main():
     # See all possible arguments in src/transformers/training_args.py
@@ -365,11 +363,6 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
-    token_dropping_args = token_dropping.config.parse_config(model_args.token_dropping_json_path)
-    config.token_dropping = token_dropping_args
-    config.token_dropping_args = token_dropping_args
-    config = token_dropping.config.patch_config(config)
-    
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
         cache_dir=model_args.cache_dir,
@@ -377,12 +370,7 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
-    cls = token_dropping.modeling_bert.BertForSequenceClassification
-    if training_args.do_eval and (not training_args.do_train) and training_args.per_device_eval_batch_size == 1:
-        cls = token_dropping.modeling_bert_eval.BertForSequenceClassification
-        print('using token_dropping.modeling_bert_eval.BertForSequenceClassification')
-
-    model = cls.from_pretrained(
+    model = AutoModelForSequenceClassification.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
         config=config,
@@ -391,18 +379,6 @@ def main():
         use_auth_token=True if model_args.use_auth_token else None,
         ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
     )
-    if 'yujie' not in model_args.model_name_or_path:
-        for n, m in model.named_modules():
-            if 'gating_last' in n:
-                import torch
-                torch.nn.init.constant_(m.bias, 1.)
-                torch.nn.init.normal_(m.weight, 0., 0.02)
-            if 'gating_softmax_last' in n:
-                import torch
-                m.bias.data[0].normal_(mean=5., std=0.02)
-                m.bias.data[1].normal_(mean=-5., std=0.02)
-                torch.nn.init.normal_(m.weight, 0., 0.02)
-
 
     # Preprocessing the raw_datasets
     if data_args.task_name is not None:
@@ -520,7 +496,6 @@ def main():
     def compute_metrics(p: EvalPrediction):
         preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
         preds = np.squeeze(preds) if is_regression else np.argmax(preds, axis=1)
-        token_dropping.utils.temp_storage['pred'].extend([preds, p.label_ids])
         result = metric.compute(predictions=preds, references=p.label_ids)
         if len(result) > 1:
             result["combined_score"] = np.mean(list(result.values())).item()
@@ -535,56 +510,8 @@ def main():
     else:
         data_collator = None
 
-    if config.token_dropping.freeze_model:
-        for name, p in model.named_parameters():
-            if 'router_' in name:
-                p.requires_grad_(True)
-                logger.warning(name)
-            else:
-                p.requires_grad_(False)
-
-    class MyTrainer(Trainer):
-        def create_optimizer(self):
-            from transformers.trainer import get_parameter_names, is_sagemaker_mp_enabled, ALL_LAYERNORM_LAYERS
-            opt_model = self.model_wrapped if is_sagemaker_mp_enabled() else self.model
-            if self.optimizer is None:
-                decay_parameters = get_parameter_names(opt_model, ALL_LAYERNORM_LAYERS)
-                decay_parameters = [name for name in decay_parameters if "bias" not in name]
-                optimizer_grouped_parameters = [
-                    {
-                        "params": [
-                            p for n, p in opt_model.named_parameters() if (n in decay_parameters and p.requires_grad and 'router_' not in n)
-                        ],
-                        "weight_decay": self.args.weight_decay,
-                        "lr": 3e-5,
-                    },
-                    {
-                        "params": [
-                            p for n, p in opt_model.named_parameters() if (n in decay_parameters and p.requires_grad and 'router_' in n)
-                        ],
-                        "weight_decay": self.args.weight_decay,
-                    },
-                    {
-                        "params": [
-                            p for n, p in opt_model.named_parameters() if (n not in decay_parameters and p.requires_grad and 'router_' not in n)
-                        ],
-                        "weight_decay": 0.0,
-                        "lr": 3e-5,
-                    },
-                    {
-                        "params": [
-                            p for n, p in opt_model.named_parameters() if (n not in decay_parameters and p.requires_grad and 'router_' in n)
-                        ],
-                        "weight_decay": 0.0,
-                    },
-                ]
-                # logger.warning(optimizer_grouped_parameters)
-                optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(self.args)
-                self.optimizer = optimizer_cls(optimizer_grouped_parameters, **optimizer_kwargs)
-            return self.optimizer
-
     # Initialize our Trainer
-    trainer = MyTrainer(
+    trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset if training_args.do_train else None,
@@ -617,9 +544,7 @@ def main():
     # Evaluation
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
-        token_dropping.utils.clear_temp_storage()
-        import time
-        start_time = time.time()
+
         # Loop to handle MNLI double evaluation (matched, mis-matched)
         tasks = [data_args.task_name]
         eval_datasets = [eval_dataset]
@@ -645,14 +570,8 @@ def main():
             if task is not None and "mnli" in task:
                 combined.update(metrics)
 
-            end_time = time.time()
-            from pathlib import Path
-            print('EVAL TIME CONSUMES:', end_time - start_time)
-            with open(Path(training_args.output_dir, 'eval_time.txt'), 'w') as f:
-                f.write(str(end_time - start_time))
             trainer.log_metrics("eval", metrics)
             trainer.save_metrics("eval", combined if task is not None and "mnli" in task else metrics)
-            
 
     if training_args.do_predict:
         logger.info("*** Predict ***")
@@ -693,42 +612,6 @@ def main():
         trainer.push_to_hub(**kwargs)
     else:
         trainer.create_model_card(**kwargs)
-
-    if token_dropping_args.export_onnx:
-        export_model(trainer)
-    token_dropping.utils.do_final_clean(trainer)
-
-
-def export_model(trainer: Trainer):
-    import torch
-    import torch.onnx
-    from pathlib import Path
-    # Input to the model
-    device = None
-    for p in trainer.model.parameters():
-        device = p.device
-        break
-    input_ = {}
-    for data in trainer.get_eval_dataloader():
-        for k, v in data.items():
-            if 'label' not in k and 'position' not in k:
-                input_[k] = v[:1].to(device)
-                print(k, input_[k].shape)
-        break
-    trainer.model.eval()
-    torch_out = trainer.model(**input_)
-    # Export the model
-    torch.onnx.export(trainer.model,               # model being run
-                    tuple(input_.values()),                         # model input (or a tuple for multiple inputs)
-                    Path(trainer.args.output_dir, "model.onnx").as_posix(),   # where to save the model (can be a file or file-like object)
-                    export_params=True,        # store the trained parameter weights inside the model file
-                    opset_version=11,          # the ONNX version to export the model to
-                    do_constant_folding=True,  # whether to execute constant folding for optimization
-                    # input_names = ['input'],   # the model's input names
-                    # output_names = ['output'], # the model's output names
-                    # dynamic_axes={'input' : {0 : 'batch_size'},    # variable length axes
-                    #                 'output' : {0 : 'batch_size'}}
-    )
 
 
 def _mp_fn(index):

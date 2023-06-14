@@ -409,7 +409,7 @@ def main():
         trainer.create_model_card(**kwargs)
     if token_dropping_args.export_onnx:
         export_model(trainer)
-
+    token_dropping.utils.do_final_clean(trainer)
 
 
 def export_model(trainer: Trainer):
