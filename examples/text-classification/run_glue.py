@@ -205,6 +205,7 @@ class ModelArguments:
         default=''
     )
 
+
 def main():
     # See all possible arguments in src/transformers/training_args.py
     # or by passing the --help flag to this script.
@@ -369,7 +370,7 @@ def main():
     config.token_dropping = token_dropping_args
     config.token_dropping_args = token_dropping_args
     config = token_dropping.config.patch_config(config)
-    
+
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
         cache_dir=model_args.cache_dir,
@@ -403,7 +404,6 @@ def main():
                 m.bias.data[0].normal_(mean=5., std=0.02)
                 m.bias.data[1].normal_(mean=-5., std=0.02)
                 torch.nn.init.normal_(m.weight, 0., 0.02)
-
 
     # Preprocessing the raw_datasets
     if data_args.task_name is not None:
@@ -489,9 +489,9 @@ def main():
 
     if training_args.do_eval:
         # if "validation" not in raw_datasets and "validation_matched" not in raw_datasets:
-            # raise ValueError("--do_eval requires a validation dataset")
+        # raise ValueError("--do_eval requires a validation dataset")
         val_key = "validation_matched" if data_args.task_name == "mnli" else "validation"
-        if data_args.dataset_name == 'imdb':
+        if 'imdb' in data_args.dataset_name:
             val_key = 'test'
         eval_dataset = raw_datasets[val_key]
         if data_args.max_eval_samples is not None:
@@ -656,7 +656,6 @@ def main():
                 f.write(str(end_time - start_time))
             trainer.log_metrics("eval", metrics)
             trainer.save_metrics("eval", combined if task is not None and "mnli" in task else metrics)
-            
 
     if training_args.do_predict:
         logger.info("*** Predict ***")
@@ -723,16 +722,16 @@ def export_model(trainer: Trainer):
     torch_out = trainer.model(**input_)
     # Export the model
     torch.onnx.export(trainer.model,               # model being run
-                    tuple(input_.values()),                         # model input (or a tuple for multiple inputs)
-                    Path(trainer.args.output_dir, "model.onnx").as_posix(),   # where to save the model (can be a file or file-like object)
-                    export_params=True,        # store the trained parameter weights inside the model file
-                    opset_version=11,          # the ONNX version to export the model to
-                    do_constant_folding=True,  # whether to execute constant folding for optimization
-                    # input_names = ['input'],   # the model's input names
-                    # output_names = ['output'], # the model's output names
-                    # dynamic_axes={'input' : {0 : 'batch_size'},    # variable length axes
-                    #                 'output' : {0 : 'batch_size'}}
-    )
+                      tuple(input_.values()),                         # model input (or a tuple for multiple inputs)
+                      Path(trainer.args.output_dir, "model.onnx").as_posix(),   # where to save the model (can be a file or file-like object)
+                      export_params=True,        # store the trained parameter weights inside the model file
+                      opset_version=11,          # the ONNX version to export the model to
+                      do_constant_folding=True,  # whether to execute constant folding for optimization
+                      # input_names = ['input'],   # the model's input names
+                      # output_names = ['output'], # the model's output names
+                      # dynamic_axes={'input' : {0 : 'batch_size'},    # variable length axes
+                      #                 'output' : {0 : 'batch_size'}}
+                      )
 
 
 def _mp_fn(index):
