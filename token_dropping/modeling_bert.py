@@ -268,6 +268,8 @@ class BertSelfAttention(nn.Module):
 
         self.is_decoder = config.is_decoder
         self.config = config
+        import token_dropping
+        self.token_dropping_args: token_dropping.config.TokenDroppingConfig = self.config.token_dropping
 
     def transpose_for_scores(self, x: torch.Tensor) -> torch.Tensor:
         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
@@ -361,8 +363,12 @@ class BertSelfAttention(nn.Module):
 
         # Normalize the attention scores to probabilities.
         attention_probs = nn.functional.softmax(attention_scores, dim=-1)
-        attention_probs = attention_probs * learnable_01mask[:, None, None, :]
-        attention_probs = attention_probs / attention_probs.sum(dim=-1, keepdim=True)
+
+        # skim mask
+        if attention_probs.shape[-1] == learnable_01mask.shape[-1]:
+            attention_probs = attention_probs * learnable_01mask[:, None, None, :]
+            attention_probs = attention_probs / attention_probs.sum(dim=-1, keepdim=True)
+
         attention_probs_before_dropout = attention_probs
 
         # This is actually dropping out entire tokens to attend to, which might
