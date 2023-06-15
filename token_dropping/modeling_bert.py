@@ -727,8 +727,8 @@ class BertEncoder(nn.Module):
                     learnable_01mask,
                 )
                 import random
-                if (i == 11) and (random.randint(0, 80) % 77 == 0):
-                    print('layer', i, 'preserve', learnable_01mask.sum(dim=-1)[:10].detach(), flush=True)
+                if (i == 10) and (random.randint(0, 80) % 77 == 0):
+                    print('after layer', i, 'preserve', learnable_01mask.sum(dim=-1)[:10].detach(), flush=True)
 
             hidden_states = layer_outputs[0]
             if use_cache:
@@ -1725,7 +1725,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
             return ((loss,) + output) if loss is not None else output
 
         return SequenceClassifierOutput(
-            loss=loss + torch.stack(mask_loss).mean() * self.config.token_dropping.mask_loss_alpha if self.training else mask_loss[-1],
+            loss=loss + torch.stack(mask_loss).mean() * self.config.token_dropping.mask_loss_alpha if self.training else mask_loss[-2],
             logits=logits,
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,

@@ -391,7 +391,8 @@ def main():
         use_auth_token=True if model_args.use_auth_token else None,
         ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
     )
-    if 'yujie' not in model_args.model_name_or_path:
+    from pathlib import Path
+    if not Path(model_args.model_name_or_path).is_file():
         for n, m in model.named_modules():
             if 'gating_last' in n:
                 import torch
