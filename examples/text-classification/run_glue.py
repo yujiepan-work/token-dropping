@@ -491,7 +491,7 @@ def main():
         # if "validation" not in raw_datasets and "validation_matched" not in raw_datasets:
         # raise ValueError("--do_eval requires a validation dataset")
         val_key = "validation_matched" if data_args.task_name == "mnli" else "validation"
-        if 'imdb' in data_args.dataset_name:
+        if 'imdb' in str(data_args.dataset_name):
             val_key = 'test'
         eval_dataset = raw_datasets[val_key]
         if data_args.max_eval_samples is not None:
