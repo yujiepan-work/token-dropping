@@ -487,9 +487,12 @@ def main():
             train_dataset = train_dataset.select(range(max_train_samples))
 
     if training_args.do_eval:
-        if "validation" not in raw_datasets and "validation_matched" not in raw_datasets:
-            raise ValueError("--do_eval requires a validation dataset")
-        eval_dataset = raw_datasets["validation_matched" if data_args.task_name == "mnli" else "validation"]
+        # if "validation" not in raw_datasets and "validation_matched" not in raw_datasets:
+            # raise ValueError("--do_eval requires a validation dataset")
+        val_key = "validation_matched" if data_args.task_name == "mnli" else "validation"
+        if data_args.dataset_name == 'imdb':
+            val_key = 'test'
+        eval_dataset = raw_datasets[val_key]
         if data_args.max_eval_samples is not None:
             max_eval_samples = min(len(eval_dataset), data_args.max_eval_samples)
             eval_dataset = eval_dataset.select(range(max_eval_samples))
