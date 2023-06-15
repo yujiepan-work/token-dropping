@@ -63,7 +63,7 @@ class TokenDroppingConfig:
         default=64,
     )
     mask_loss_alpha: float = field(
-        default=0.5,
+        default=0.0,
     )
     router_before_ffn: bool = field(
         default=True
