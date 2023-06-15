@@ -393,7 +393,7 @@ def main():
         ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
     )
     from pathlib import Path
-    if not Path(model_args.model_name_or_path).is_file():
+    if token_dropping_args.reinit_router_weights:
         for n, m in model.named_modules():
             if 'gating_last' in n:
                 import torch

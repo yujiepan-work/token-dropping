@@ -68,6 +68,9 @@ class TokenDroppingConfig:
     router_before_ffn: bool = field(
         default=True
     )
+    reinit_router_weights: bool = field(
+        default=False
+    )
 
     def __post_init__(self):
         strategy = self.token_pruning_strategy.replace('_', ',').replace('-', ':')
