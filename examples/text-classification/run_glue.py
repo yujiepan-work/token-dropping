@@ -524,7 +524,7 @@ def main():
     def compute_metrics(p: EvalPrediction):
         preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
         preds = np.squeeze(preds) if is_regression else np.argmax(preds, axis=1)
-        token_dropping.utils.temp_storage['pred'].extend([preds, p.label_ids])
+        # token_dropping.utils.temp_storage['pred'].extend([preds, p.label_ids])
         result = metric.compute(predictions=preds, references=p.label_ids)
         if len(result) > 1:
             result["combined_score"] = np.mean(list(result.values())).item()
