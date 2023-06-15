@@ -21,6 +21,7 @@ import os
 import warnings
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
+from collections import defaultdict
 
 import torch
 import torch.utils.checkpoint
@@ -268,6 +269,8 @@ class BertSelfAttention(nn.Module):
 
         self.is_decoder = config.is_decoder
         self.config = config
+        import token_dropping
+        self.token_dropping_args: token_dropping.config.TokenDroppingConfig = self.config.token_dropping
 
     def transpose_for_scores(self, x: torch.Tensor) -> torch.Tensor:
         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
@@ -361,8 +364,12 @@ class BertSelfAttention(nn.Module):
 
         # Normalize the attention scores to probabilities.
         attention_probs = nn.functional.softmax(attention_scores, dim=-1)
-        attention_probs = attention_probs * learnable_01mask[:, None, None, :]
-        attention_probs = attention_probs / attention_probs.sum(dim=-1, keepdim=True)
+
+        # skim mask
+        if False: # and attention_probs.shape[-1] == learnable_01mask.shape[-1]:
+            attention_probs = attention_probs * learnable_01mask[:, None, None, :]
+            attention_probs = attention_probs / attention_probs.sum(dim=-1, keepdim=True)
+
         attention_probs_before_dropout = attention_probs
 
         # This is actually dropping out entire tokens to attend to, which might
@@ -435,7 +442,7 @@ class BertAttention(nn.Module):
         past_key_value: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
         output_attentions: Optional[bool] = False,
         tome_size: Optional[torch.FloatTensor] = None,
-        learnable_01mask = None,
+        learnable_01mask=None,
     ) -> Tuple[torch.Tensor]:
         self_outputs, attention_scores, key_layer = self.self(
             hidden_states,
@@ -524,11 +531,11 @@ class BertLayer(nn.Module):
         learnable_01mask: Optional[torch.FloatTensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
 
-        import token_dropping
-        if not self.training:
+        if not self.training and 0:
+            import token_dropping
             token_dropping.utils.temp_storage[self.layer_id].append(hidden_states.shape[1])
             token_dropping.utils.temp_storage[f'mask{self.layer_id}'].append(learnable_01mask.detach().cpu().half())
-            
+
         # decoder uni-directional self-attention cached key/values tuple is at positions 1,2
         self_attn_past_key_value = past_key_value[:2] if past_key_value is not None else None
         self_attention_outputs, self_attention_scores, key_layer = self.attention(
@@ -595,7 +602,7 @@ class BertLayer(nn.Module):
         if self.num_preserved_tokens > 0 and not self.token_dropping_config.router_before_ffn:
             _results_tuple = self.router_token(layer_output, attention_mask, self_attention_scores, key_layer, tome_size)
             new_layer_output, new_attention_mask, new_tome_size = _results_tuple[:3]
-            outputs[0] = new_layer_output
+            outputs = (new_layer_output,) + outputs[1:]
             new_learnable_01mask = _results_tuple[3] if len(_results_tuple) >= 4 else None
 
         final_01mask = None
@@ -651,20 +658,11 @@ class BertEncoder(nn.Module):
 
         next_decoder_cache = () if use_cache else None
 
-        # add new token at beginning
-        if self.config.token_dropping_args.add_prompt_token:
-            router_helper_token = self.router_helper_token.repeat(hidden_states.shape[0], 1, 1)
-            hidden_states = torch.cat([hidden_states, router_helper_token], dim=1)  # [B, L+1, D]
-            attention_mask = torch.cat([
-                attention_mask,
-                torch.zeros((hidden_states.shape[0], 1, 1, 1), device=attention_mask.device, dtype=attention_mask.dtype),
-            ], dim=-1
-            )
-
         new_attention_mask = attention_mask
-        new_tome_size = torch.ones((hidden_states.shape[0], hidden_states.shape[1], 1), device=attention_mask.device, dtype=attention_mask.dtype)
-        learnable_01mask= (attention_mask > -10.).float().squeeze(1).squeeze(1)
-        ori_seq_len = (attention_mask > -10.).float().sum(dim=-1).squeeze(1) # B * 1
+        new_tome_size = torch.ones((hidden_states.shape[0], hidden_states.shape[1], 1), device=hidden_states.device, dtype=hidden_states.dtype)
+        # learnable_01mask = (attention_mask > -10.).float().squeeze(1).squeeze(1)
+        learnable_01mask=None
+        # ori_seq_len = (attention_mask > -10.).float().sum(dim=-1).squeeze(1)  # B * 1
         mask_loss = []
 
         # tome_config
@@ -672,27 +670,21 @@ class BertEncoder(nn.Module):
         if self.config.token_dropping_args.tome_last_len > 0:
             # use tome config
             total_r = max(0, original_length - self.config.token_dropping_args.tome_last_len)
-            from collections import defaultdict
             tome_r_config = defaultdict(int)
+
             def add_r():
                 while True:
-                    for k in [5,6,4,7,3,8,2,9,1,10]:
+                    for k in [5, 6, 4, 7, 3, 8, 2, 9, 1, 10]:
                         tome_r_config[k] += 1
                         yield
             add_r_iter = add_r()
             for _ in range(total_r):
                 next(add_r_iter)
-            print(tome_r_config)
+            # print(tome_r_config)
 
         for i, layer_module in enumerate(self.layer):
-            if i == 0:
-                mask_loss.append((learnable_01mask.sum(dim=-1, keepdim=True) / ori_seq_len).mean())
-            
-            if i>0 and self.layer[i-1].num_preserved_tokens > 0:
-                learnable_01mask_bool = learnable_01mask.bool()
-                hidden_states = hidden_states[learnable_01mask_bool].reshape(1, -1, hidden_states.shape[-1])
-                new_attention_mask = torch.zeros((1, 1, 1, hidden_states.shape[1]), dtype=hidden_states.dtype, device=hidden_states.device)
-                learnable_01mask = torch.ones((1, hidden_states.shape[1]), dtype=hidden_states.dtype, device=hidden_states.device)
+            # the first learnable_01mask is not differentialable. The following 11 are contributing to model update.
+            # mask_loss.append((learnable_01mask.sum(dim=-1, keepdim=True) / ori_seq_len).mean())
 
             if 1 <= i <= 10 and self.config.token_dropping_args.tome_last_len > 0:
                 layer_module.router_token.force_r = tome_r_config[i]
@@ -729,12 +721,8 @@ class BertEncoder(nn.Module):
                     past_key_value,
                     output_attentions,
                     new_tome_size,
-                    learnable_01mask,
+                    learnable_01mask=learnable_01mask,
                 )
-                import random
-                if (i == 11) and (random.randint(0, 80) % 77 == 0) and 0:
-                    print('layer', i, 'preserve', learnable_01mask.sum(dim=-1)[:10].detach(), flush=True)
-
             hidden_states = layer_outputs[0]
             if use_cache:
                 next_decoder_cache += (layer_outputs[-1],)
@@ -1111,6 +1099,7 @@ class BertModel(BertPreTrainedModel):
         # ourselves in which case we just need to make it broadcastable to all heads.
         # print(attention_mask.sum(dim=1).min()) # minimal seq len
         extended_attention_mask: torch.Tensor = self.get_extended_attention_mask(attention_mask, input_shape)
+        # extended_attention_mask = None
 
         # If a 2D or 3D attention mask is provided for the cross-attention
         # we need to make broadcastable to [batch_size, num_heads, seq_length, seq_length]
@@ -1679,12 +1668,13 @@ class BertForSequenceClassification(BertPreTrainedModel):
         """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         return_dict = True
-        
-        if input_ids.shape[0] == 1: # i dont know why even with bs=1, there is still some mask
-            attention_mask_bool = (attention_mask == 1)
-            input_ids = input_ids[None, attention_mask_bool]
-            token_type_ids = token_type_ids[None, attention_mask_bool]
-            attention_mask = attention_mask[None, attention_mask_bool]
+
+        if input_ids.shape[0] == 1:  # i dont know why even with bs=1, there is still some mask
+            if attention_mask.float().mean() < 1.:
+                attention_mask_bool = (attention_mask == 1)
+                input_ids = input_ids[None, attention_mask_bool]
+                token_type_ids = token_type_ids[None, attention_mask_bool]
+                attention_mask = attention_mask[None, attention_mask_bool]
 
         outputs, mask_loss = self.bert(
             input_ids,
@@ -1704,6 +1694,8 @@ class BertForSequenceClassification(BertPreTrainedModel):
         logits = self.classifier(pooled_output)
 
         loss = None
+        loss = torch.tensor(0., device=logits.device)
+        labels = None
         if labels is not None:
             if self.config.problem_type is None:
                 if self.num_labels == 1:
@@ -1730,7 +1722,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
             return ((loss,) + output) if loss is not None else output
 
         return SequenceClassifierOutput(
-            loss=loss + torch.stack(mask_loss).mean() * self.config.token_dropping.mask_loss_alpha if self.training else mask_loss[-1],
+            loss=loss,
             logits=logits,
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,

@@ -379,7 +379,7 @@ def main():
         use_auth_token=True if model_args.use_auth_token else None,
     )
     cls = token_dropping.modeling_bert.BertForSequenceClassification
-    if training_args.do_eval and (not training_args.do_train) and training_args.per_device_eval_batch_size == 1:
+    if token_dropping_args.is_benchmark_mode:
         cls = token_dropping.modeling_bert_eval.BertForSequenceClassification
         print('using token_dropping.modeling_bert_eval.BertForSequenceClassification')
 
