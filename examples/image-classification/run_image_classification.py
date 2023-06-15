@@ -294,6 +294,17 @@ def main():
         use_auth_token=True if model_args.use_auth_token else None,
         ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
     )
+    if token_dropping_args.reinit_router_weights:
+        for n, m in model.named_modules():
+            if 'gating_last' in n:
+                import torch
+                torch.nn.init.constant_(m.bias, 1.)
+                torch.nn.init.normal_(m.weight, 0., 0.02)
+            if 'gating_softmax_last' in n:
+                import torch
+                m.bias.data[0].normal_(mean=5., std=0.02)
+                m.bias.data[1].normal_(mean=-5., std=0.02)
+                torch.nn.init.normal_(m.weight, 0., 0.02)
     image_processor = AutoImageProcessor.from_pretrained(
         model_args.image_processor_name or model_args.model_name_or_path,
         cache_dir=model_args.cache_dir,

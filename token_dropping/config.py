@@ -52,6 +52,7 @@ class TokenDroppingConfig:
     )
     tome_force_r: int = field(
         default=-1,
+        # deprecated (seems like)
     )
     num_new_token: int = field(
         default=1

@@ -204,6 +204,7 @@ class ViTSelfAttention(nn.Module):
     def forward(
         self, hidden_states, head_mask: Optional[torch.Tensor] = None, output_attentions: bool = False,
         tome_size: Optional[torch.Tensor] = None,
+        learnable_01mask: Optional[torch.Tensor] = None,
     ) -> Union[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor]]:
         mixed_query_layer = self.query(hidden_states)
 
@@ -223,6 +224,12 @@ class ViTSelfAttention(nn.Module):
 
         # Normalize the attention scores to probabilities.
         attention_probs = nn.functional.softmax(attention_scores, dim=-1)
+
+        # skim mask
+        if attention_probs.shape[-1] == learnable_01mask.shape[-1]:
+            attention_probs = attention_probs * learnable_01mask[:, None, None, :]
+            attention_probs = attention_probs / attention_probs.sum(dim=-1, keepdim=True)
+
         attention_probs_before_dropout = attention_probs
 
         # This is actually dropping out entire tokens to attend to, which might
@@ -293,8 +300,10 @@ class ViTAttention(nn.Module):
         head_mask: Optional[torch.Tensor] = None,
         output_attentions: bool = False,
         tome_size: Optional[torch.Tensor] = None,
+        learnable_01mask=None,
     ) -> Union[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor]]:
-        self_outputs, attention_probs_before_dropout, key_layer = self.attention(hidden_states, head_mask, output_attentions, tome_size=tome_size)
+        self_outputs, attention_probs_before_dropout, key_layer = self.attention(
+            hidden_states, head_mask, output_attentions, tome_size=tome_size, learnable_01mask=learnable_01mask)
 
         attention_output = self.output(self_outputs[0], hidden_states)
 
@@ -349,6 +358,7 @@ class ViTLayer(nn.Module):
 
         import token_dropping
         token_dropping_args: token_dropping.config.TokenDroppingConfig = config.token_dropping
+        self.token_dropping_args = token_dropping_args
         self.token_pruning_strategy = token_dropping_args.token_pruning_strategy
         self.num_preserved_tokens = self.token_pruning_strategy.get(self.layer_id, -1)
         logger.warning('Block %d - preserve %d [tokens + new token + class token]', layer_id, self.num_preserved_tokens)
@@ -359,13 +369,13 @@ class ViTLayer(nn.Module):
                 router_cls = getattr(token_dropping.routing, token_dropping_args.router_version)
             self.router_token = router_cls(config, self.num_preserved_tokens)
 
-
     def forward(
         self,
         hidden_states: torch.Tensor,
         head_mask: Optional[torch.Tensor] = None,
         output_attentions: bool = False,
         tome_size: Optional[torch.Tensor] = None,
+        learnable_01mask: Optional[torch.FloatTensor] = None,
     ) -> Union[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor]]:
         import token_dropping
         if not self.training:
@@ -376,6 +386,7 @@ class ViTLayer(nn.Module):
             head_mask,
             output_attentions=output_attentions,
             tome_size=tome_size,
+            learnable_01mask=learnable_01mask,
         )
         attention_output = self_attention_outputs[0]
         outputs = self_attention_outputs[1:]  # add self attentions if we output attention weights
@@ -383,11 +394,14 @@ class ViTLayer(nn.Module):
         # first residual connection
         hidden_states = attention_output + hidden_states
 
-        if self.num_preserved_tokens > 0:
-            hidden_states, _, new_tome_size = self.router_token(hidden_states, None, attention_probs_before_dropout, key_layer, tome_size)
+        new_learnable_01mask = None
+        if self.num_preserved_tokens > 0 and self.token_dropping_args.router_before_ffn:
+            # hidden_states, _, new_tome_size = self.router_token(hidden_states, None, attention_probs_before_dropout, key_layer, tome_size)
+            _results_tuple = self.router_token(hidden_states, None, attention_probs_before_dropout, key_layer, tome_size)
+            hidden_states, _, new_tome_size = _results_tuple[:3]
+            new_learnable_01mask = _results_tuple[3] if len(_results_tuple) >= 4 else None
         else:
             new_tome_size = tome_size
-
 
         # in ViT, layernorm is also applied after self-attention
         layer_output = self.layernorm_after(hidden_states)
@@ -396,9 +410,20 @@ class ViTLayer(nn.Module):
         # second residual connection is done here
         layer_output = self.output(layer_output, hidden_states)
 
+        if self.num_preserved_tokens > 0 and not self.token_dropping_args.router_before_ffn:
+            _results_tuple = self.router_token(layer_output, None, attention_probs_before_dropout, key_layer, tome_size)
+            layer_output, _, new_tome_size = _results_tuple[:3]
+            new_learnable_01mask = _results_tuple[3] if len(_results_tuple) >= 4 else None
+
+        final_01mask = None
+        if learnable_01mask is not None and new_learnable_01mask is not None:
+            final_01mask = learnable_01mask * new_learnable_01mask
+        elif learnable_01mask is not None and new_learnable_01mask is None:
+            final_01mask = learnable_01mask
+
         outputs = (layer_output,) + outputs
 
-        return outputs, new_tome_size
+        return outputs, new_tome_size, final_01mask
 
 
 class ViTEncoder(nn.Module):
@@ -420,8 +445,13 @@ class ViTEncoder(nn.Module):
         all_self_attentions = () if output_attentions else None
 
         new_tome_size = torch.ones((hidden_states.shape[0], hidden_states.shape[1], 1), device=hidden_states.device, dtype=hidden_states.dtype)
+        learnable_01mask = torch.ones_like(new_tome_size).squeeze(-1) # B x L
+        ori_seq_len = hidden_states.shape[1]
+        mask_loss = []
 
         for i, layer_module in enumerate(self.layer):
+            mask_loss.append((learnable_01mask.sum(dim=-1, keepdim=True) / ori_seq_len).mean())
+
             if output_hidden_states:
                 all_hidden_states = all_hidden_states + (hidden_states,)
 
@@ -441,7 +471,11 @@ class ViTEncoder(nn.Module):
                     layer_head_mask,
                 )
             else:
-                layer_outputs, new_tome_size = layer_module(hidden_states, layer_head_mask, output_attentions, tome_size=new_tome_size)
+                layer_outputs, new_tome_size, learnable_01mask = layer_module(
+                    hidden_states, layer_head_mask, output_attentions, tome_size=new_tome_size, learnable_01mask=learnable_01mask)
+                import random
+                if (i == 10) and (random.randint(0, 80) % 77 == 0):
+                    print('after layer', i, 'preserve', learnable_01mask.sum(dim=-1)[:10].detach(), flush=True)
 
             hidden_states = layer_outputs[0]
 
@@ -458,7 +492,7 @@ class ViTEncoder(nn.Module):
             last_hidden_state=hidden_states,
             hidden_states=all_hidden_states,
             attentions=all_self_attentions,
-        )
+        ), mask_loss
 
 
 class ViTPreTrainedModel(PreTrainedModel):
@@ -612,7 +646,7 @@ class ViTModel(ViTPreTrainedModel):
             pixel_values, bool_masked_pos=bool_masked_pos, interpolate_pos_encoding=interpolate_pos_encoding
         )
 
-        encoder_outputs = self.encoder(
+        encoder_outputs, mask_loss = self.encoder(
             embedding_output,
             head_mask=head_mask,
             output_attentions=output_attentions,
@@ -632,7 +666,7 @@ class ViTModel(ViTPreTrainedModel):
             pooler_output=pooled_output,
             hidden_states=encoder_outputs.hidden_states,
             attentions=encoder_outputs.attentions,
-        )
+        ), mask_loss
 
 
 class ViTPooler(nn.Module):
@@ -822,7 +856,7 @@ class ViTForImageClassification(ViTPreTrainedModel):
         """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
-        outputs = self.vit(
+        outputs, mask_loss = self.vit(
             pixel_values,
             head_mask=head_mask,
             output_attentions=output_attentions,
@@ -863,7 +897,7 @@ class ViTForImageClassification(ViTPreTrainedModel):
             return ((loss,) + output) if loss is not None else output
 
         return ImageClassifierOutput(
-            loss=loss,
+            loss=loss + torch.stack(mask_loss).mean() * self.config.token_dropping.mask_loss_alpha if self.training else mask_loss[-2],
             logits=logits,
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,

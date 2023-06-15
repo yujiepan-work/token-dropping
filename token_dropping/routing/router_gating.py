@@ -183,7 +183,7 @@ class RouterOursSoftmaxGatingNoNewToken(torch.nn.Module):
 
         B, L, D = hidden_states.shape
         device = hidden_states.device
-        dtype = attention_mask.dtype
+        dtype = hidden_states.dtype
 
         # return hidden_states, attention_mask, torch.ones((B, hidden_states.shape[1], 1), device=device, dtype=dtype), torch.ones((B, L), dtype=dtype, device=device)
 
