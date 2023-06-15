@@ -435,7 +435,7 @@ class BertAttention(nn.Module):
         past_key_value: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
         output_attentions: Optional[bool] = False,
         tome_size: Optional[torch.FloatTensor] = None,
-        learnable_01mask = None,
+        learnable_01mask=None,
     ) -> Tuple[torch.Tensor]:
         self_outputs, attention_scores, key_layer = self.self(
             hidden_states,
@@ -528,7 +528,7 @@ class BertLayer(nn.Module):
         if not self.training:
             token_dropping.utils.temp_storage[self.layer_id].append(hidden_states.shape[1])
             token_dropping.utils.temp_storage[f'mask{self.layer_id}'].append(learnable_01mask.detach().cpu().half())
-            
+
         # decoder uni-directional self-attention cached key/values tuple is at positions 1,2
         self_attn_past_key_value = past_key_value[:2] if past_key_value is not None else None
         self_attention_outputs, self_attention_scores, key_layer = self.attention(
@@ -663,8 +663,8 @@ class BertEncoder(nn.Module):
 
         new_attention_mask = attention_mask
         new_tome_size = torch.ones((hidden_states.shape[0], hidden_states.shape[1], 1), device=attention_mask.device, dtype=attention_mask.dtype)
-        learnable_01mask= (attention_mask > -10.).float().squeeze(1).squeeze(1)
-        ori_seq_len = (attention_mask > -10.).float().sum(dim=-1).squeeze(1) # B * 1
+        learnable_01mask = (attention_mask > -10.).float().squeeze(1).squeeze(1)
+        ori_seq_len = (attention_mask > -10.).float().sum(dim=-1).squeeze(1)  # B * 1
         mask_loss = []
 
         # tome_config
@@ -674,9 +674,10 @@ class BertEncoder(nn.Module):
             total_r = max(0, original_length - self.config.token_dropping_args.tome_last_len)
             from collections import defaultdict
             tome_r_config = defaultdict(int)
+
             def add_r():
                 while True:
-                    for k in [5,6,4,7,3,8,2,9,1,10]:
+                    for k in [5, 6, 4, 7, 3, 8, 2, 9, 1, 10]:
                         tome_r_config[k] += 1
                         yield
             add_r_iter = add_r()
@@ -685,8 +686,9 @@ class BertEncoder(nn.Module):
             print(tome_r_config)
 
         for i, layer_module in enumerate(self.layer):
+            # the first learnable_01mask is not differentialable. The following 11 are contributing to model update.
             mask_loss.append((learnable_01mask.sum(dim=-1, keepdim=True) / ori_seq_len).mean())
-            
+
             if 1 <= i <= 10 and self.config.token_dropping_args.tome_last_len > 0:
                 layer_module.router_token.force_r = tome_r_config[i]
 
@@ -1672,8 +1674,8 @@ class BertForSequenceClassification(BertPreTrainedModel):
         """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         return_dict = True
-        
-        if input_ids.shape[0] == 1: # i dont know why even with bs=1, there is still some mask
+
+        if input_ids.shape[0] == 1:  # i dont know why even with bs=1, there is still some mask
             attention_mask_bool = (attention_mask == 1)
             input_ids = input_ids[None, attention_mask_bool]
             token_type_ids = token_type_ids[None, attention_mask_bool]
