@@ -16,7 +16,7 @@ from token_dropping.routing.my_attention import MyMultiHeadAttention
 # pylint: disable=missing-class-docstring
 
 class RouterOursNewToken(torch.nn.Module):
-    """only prune, no new token.
+    """only prune, 1 new token.
 
     :param torch: _description_
     :type torch: _type_
@@ -107,12 +107,33 @@ class RouterOursNoNew(torch.nn.Module):
         super().__init__()
         self.K = num_preserved_tokens
         self.config = config
+        token_dropping_args: token_dropping.config.TokenDroppingConfig = config.token_dropping
+        self.token_dropping_args = token_dropping_args
         self.attention = MyMultiHeadAttention(
             query_dim=config.hidden_size, key_dim=config.hidden_size,
             num_units=256, num_heads=4, output_dim=config.hidden_size,
         )
 
+    def forward_eval(self, hidden_states, attention_mask, self_attention_scores, key_layer, tome_size):
+        B, L, D = hidden_states.shape
+        device = hidden_states.device
+        dtype = hidden_states.dtype
+
+        K = min(self.K, L)
+        importance_scores = self_attention_scores.mean(dim=1).sum(dim=1)  # B * L
+        importance_scores[:, 0] = math.inf  # class token
+        important_indices = torch.topk(importance_scores, K, dim=-1).indices  # [B, 15]
+        important_token_mask = (
+            torch.zeros((B, L), device=device, dtype=torch.bool)
+            .scatter_(dim=1, index=important_indices, value=True)
+        )  # [B, L]
+        final_token = hidden_states[important_token_mask].unsqueeze(dim=0)
+        tome_size = torch.ones((B, final_token.shape[1], 1), device=device, dtype=dtype)
+        return final_token, None, tome_size
+
     def forward(self, hidden_states: Tensor, attention_mask: Optional[Tensor], self_attention_scores: Tensor, key_layer, tome_size):
+        if self.token_dropping_args.is_benchmark_mode:
+            return self.forward_eval(hidden_states, attention_mask, self_attention_scores, key_layer, tome_size)
         # return hidden_states[:, :15, :], attention_mask[:, :, :, :15]
         # print(attention_mask.shape) # torch.Size([B, 1, 1, L])
         # self-attention_scores: torch.Size([B, H, L, L])
