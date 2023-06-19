@@ -57,11 +57,11 @@ class RouterToMeGlueUseKey(torch.nn.Module):
         self.K = num_preserved_tokens
         self.config = config
         self.token_dropping_args: token_dropping.config.TokenDroppingConfig = config.token_dropping
-        assert self.token_dropping_args.use_smaller_router
-        self.attention = MyMultiHeadAttention(
-            query_dim=config.hidden_size, key_dim=config.hidden_size,
-            num_units=config.hidden_size // 2, num_heads=config.num_attention_heads // 2, output_dim=config.hidden_size,
-        )
+        # assert self.token_dropping_args.use_smaller_router
+        # self.attention = MyMultiHeadAttention(
+        #     query_dim=config.hidden_size, key_dim=config.hidden_size,
+        #     num_units=config.hidden_size // 2, num_heads=config.num_attention_heads // 2, output_dim=config.hidden_size,
+        # )
         self.force_r = None
 
     def forward(self, hidden_states: Tensor, attention_mask: Optional[Tensor], self_attention_scores: Tensor, key_layer, tome_size):
@@ -79,6 +79,7 @@ class RouterToMeGlueUseKey(torch.nn.Module):
         device = hidden_states.device
         dtype = torch.float32
         K = self.K
+        assert B==1
 
         # return hidden_states, attention_mask, torch.ones((B, L, 1), device=device, dtype=dtype)
 
