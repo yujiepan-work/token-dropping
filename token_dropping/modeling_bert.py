@@ -735,6 +735,7 @@ class BertEncoder(nn.Module):
                 import random
                 if (i == 10) and (random.randint(0, 80) % 77 == 0):
                     print('after layer', i, 'preserve', learnable_01mask.sum(dim=-1)[:10].detach(), flush=True)
+                    print('after layer', i, 'preserve hidden states', layer_outputs[0].shape, flush=True)
 
             hidden_states = layer_outputs[0]
             if use_cache:
