@@ -369,6 +369,7 @@ def main():
     token_dropping_args = token_dropping.config.parse_config(model_args.token_dropping_json_path)
     config.token_dropping = token_dropping_args
     config.token_dropping_args = token_dropping_args
+    config.output_dir = training_args.output_dir
     config = token_dropping.config.patch_config(config)
 
     tokenizer = AutoTokenizer.from_pretrained(
