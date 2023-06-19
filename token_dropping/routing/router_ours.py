@@ -13,6 +13,14 @@ import token_dropping
 from token_dropping.routing.my_attention import MyMultiHeadAttention
 
 
+def masked_attention_scores(self_attention_scores, attention_mask):
+    B, H, L = self_attention_scores.shape[:3]
+    attention_mask_float = (attention_mask > -10.).float()  # B,1,1,L
+    elementwise_attention_mask = torch.bmm(attention_mask_float.view(B, L, 1), attention_mask_float.view(B, 1, L))
+    scores = (self_attention_scores * elementwise_attention_mask.unsqueeze(1))
+    return scores
+
+
 # pylint: disable=missing-class-docstring
 
 class RouterOursNewToken(torch.nn.Module):
@@ -30,8 +38,8 @@ class RouterOursNewToken(torch.nn.Module):
         self.num_new_token = token_dropping_args.num_new_token
         self.attention = MyMultiHeadAttention(
             query_dim=config.hidden_size, key_dim=config.hidden_size,
-            num_units=token_dropping_args.attention_unit, 
-            num_heads=token_dropping_args.attention_unit // token_dropping_args.attention_head_dim, 
+            num_units=token_dropping_args.attention_unit,
+            num_heads=token_dropping_args.attention_unit // token_dropping_args.attention_head_dim,
             output_dim=config.hidden_size,
         )
         assert self.num_new_token == 1
@@ -47,7 +55,11 @@ class RouterOursNewToken(torch.nn.Module):
 
         K = min(self.K, L)
         K = max(K - self.num_new_token, 1)
-        importance_scores = self_attention_scores.mean(dim=1).sum(dim=1)  # B * L
+        if attention_mask is not None:
+            importance_scores = masked_attention_scores(self_attention_scores, attention_mask)
+        else:
+            importance_scores = self_attention_scores
+        importance_scores = importance_scores.mean(dim=1).mean(dim=1)  # B * L
         importance_scores[:, 0] = math.inf  # class token
         important_indices = torch.topk(importance_scores, K, dim=-1).indices  # [B, K]
         important_token_mask = (
@@ -143,7 +155,11 @@ class RouterOursNoNew(torch.nn.Module):
         dtype = torch.float32
 
         K = min(self.K, L)
-        importance_scores = self_attention_scores.mean(dim=1).sum(dim=1)  # B * L
+        if attention_mask is not None:
+            importance_scores = masked_attention_scores(self_attention_scores, attention_mask)
+        else:
+            importance_scores = self_attention_scores
+        importance_scores = importance_scores.mean(dim=1).mean(dim=1)  # B * L
         importance_scores[:, 0] = math.inf  # class token
         important_indices = torch.topk(importance_scores, K, dim=-1).indices  # [B, 15]
         important_token_mask = (
@@ -189,8 +205,8 @@ class RouterOursWindowNoNew(torch.nn.Module):
         token_dropping_args: token_dropping.config.TokenDroppingConfig = config.token_dropping
         self.attention = MyMultiHeadAttention(
             query_dim=config.hidden_size, key_dim=config.hidden_size,
-            num_units=token_dropping_args.attention_unit, 
-            num_heads=token_dropping_args.attention_unit // token_dropping_args.attention_head_dim, 
+            num_units=token_dropping_args.attention_unit,
+            num_heads=token_dropping_args.attention_unit // token_dropping_args.attention_head_dim,
             output_dim=config.hidden_size,
         )
 
@@ -210,16 +226,16 @@ class RouterOursWindowNoNew(torch.nn.Module):
         adaptive_maxpool = nn.AdaptiveMaxPool1d(K, return_indices=True)
         important_indices = adaptive_maxpool(importance_scores)[1].squeeze(1)  # [B, K]
         preserved_tokens = torch.gather(
-            hidden_states, dim=1, 
+            hidden_states, dim=1,
             index=important_indices.unsqueeze(-1).repeat(1, 1, D)
         )
-        
+
         preserved_attention_mask = None
         assert attention_mask is None, "attention mask has not been correctly developed"
         if attention_mask is not None:
             preserved_attention_mask = attention_mask[important_token_mask.unsqueeze(1).unsqueeze(1)].view(B, 1, 1, K)
 
-        final_token = preserved_tokens # B * (K) * D
+        final_token = preserved_tokens  # B * (K) * D
         if attention_mask is not None:
             final_attention_mask = torch.cat(
                 [
