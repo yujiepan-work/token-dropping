@@ -8,3 +8,4 @@ from . import modeling_bert_tome
 from . import utils
 
 from . import modeling_bert_eval
+from . import modeling_vit_eval

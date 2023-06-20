@@ -285,7 +285,12 @@ def main():
     config.token_dropping_args = token_dropping_args
     config = token_dropping.config.patch_config(config)
 
-    model = token_dropping.modeling_vit.ViTForImageClassification.from_pretrained(
+    cls = token_dropping.modeling_vit.ViTForImageClassification
+    if token_dropping_args.is_benchmark_mode:
+        cls = token_dropping.modeling_vit_eval.ViTForImageClassification
+        print('using token_dropping.modeling_vit_eval.ViTForImageClassification')
+
+    model = cls.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
         config=config,
