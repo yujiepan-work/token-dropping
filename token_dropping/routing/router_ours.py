@@ -152,10 +152,10 @@ class RouterOursNoNew(torch.nn.Module):
         self.config = config
         token_dropping_args: token_dropping.config.TokenDroppingConfig = config.token_dropping
         self.token_dropping_args = token_dropping_args
-        self.attention = MyMultiHeadAttention(
-            query_dim=config.hidden_size, key_dim=config.hidden_size,
-            num_units=256, num_heads=4, output_dim=config.hidden_size,
-        )
+        # self.attention = MyMultiHeadAttention(
+        #     query_dim=config.hidden_size, key_dim=config.hidden_size,
+        #     num_units=256, num_heads=4, output_dim=config.hidden_size,
+        # )
 
     def forward_eval(self, hidden_states, attention_mask, self_attention_scores, key_layer, tome_size):
         B, L, D = hidden_states.shape
