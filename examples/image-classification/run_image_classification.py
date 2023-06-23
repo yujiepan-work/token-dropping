@@ -362,6 +362,7 @@ def main():
         # Set the training transforms
         dataset["train"].set_transform(train_transforms)
 
+    eval_dataset = None
     if training_args.do_eval:
         if "validation" not in dataset:
             raise ValueError("--do_eval requires a validation dataset")
@@ -371,6 +372,11 @@ def main():
             )
         # Set the validation transforms
         dataset["validation"].set_transform(val_transforms)
+        eval_dataset = dataset["validation"]
+        if token_dropping_args.is_benchmark_mode:
+            from token_dropping.utils import PreloadedDataset
+            logger.info('Preloading eval dataset...')
+            eval_dataset = PreloadedDataset(dataset['validation'])
 
 
     logger.warning('Learnable parameters:')
@@ -387,7 +393,7 @@ def main():
         model=model,
         args=training_args,
         train_dataset=dataset["train"] if training_args.do_train else None,
-        eval_dataset=dataset["validation"] if training_args.do_eval else None,
+        eval_dataset=eval_dataset if training_args.do_eval else None,
         compute_metrics=compute_metrics,
         tokenizer=image_processor,
         data_collator=collate_fn,
