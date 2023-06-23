@@ -315,3 +315,6 @@ class RouterOursAttentionGatingNoNewToken(RouterOursSoftmaxAddAttentionGatingNoN
     def fusion_method(self, pretrained_attention_scores, learned_scores):
         print(pretrained_attention_scores[0, :10])
         return pretrained_attention_scores
+
+
+RouterTranskimmer = RouterOursSoftmaxGatingNoNewToken
