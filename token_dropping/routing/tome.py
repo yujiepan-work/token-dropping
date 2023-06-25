@@ -20,6 +20,7 @@ def bipartite_soft_matching(
     r: int,
     class_token: bool = False,
     distill_token: bool = False,
+    for_onnx_export: bool = False,
 ) -> Tuple[Callable, Callable]:
     """
     Applies ToMe with a balanced matching set (50%, 50%).
@@ -72,7 +73,10 @@ def bipartite_soft_matching(
         n, t1, c = src.shape
         unm = src.gather(dim=-2, index=unm_idx.expand(n, t1 - r, c))
         src = src.gather(dim=-2, index=src_idx.expand(n, r, c))
-        dst = dst.scatter_reduce(-2, dst_idx.expand(n, r, c), src, reduce=mode)
+        if for_onnx_export:
+            dst = dst.scatter_add(-2, dst_idx.expand(n, r, c), src)
+        else:
+            dst = dst.scatter_reduce(-2, dst_idx.expand(n, r, c), src, reduce=mode)
 
         if distill_token:
             return torch.cat([unm[:, :1], dst[:, :1], unm[:, 1:], dst[:, 1:]], dim=1)

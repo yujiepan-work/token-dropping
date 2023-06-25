@@ -77,7 +77,7 @@ class RouterToMeGlueUseKey(torch.nn.Module):
 
         B, L, D = hidden_states.shape
         device = hidden_states.device
-        dtype = torch.float32
+        dtype = hidden_states.dtype
         K = self.K
         assert B==1
 
@@ -86,7 +86,7 @@ class RouterToMeGlueUseKey(torch.nn.Module):
         # token merging
         from token_dropping.routing.tome import bipartite_soft_matching, do_nothing
         r = max(0, L-K) if self.force_r is None else self.force_r
-        merge, _ = bipartite_soft_matching(key_layer.mean(dim=1), r=r, class_token=True)
+        merge, _ = bipartite_soft_matching(key_layer.mean(dim=1), r=r, class_token=True, for_onnx_export=self.token_dropping_args.export_onnx)
         preserved_tokens = merge(hidden_states)
 
         if tome_size is None:

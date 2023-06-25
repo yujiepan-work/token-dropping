@@ -443,27 +443,23 @@ def export_model(trainer: Trainer):
     for p in trainer.model.parameters():
         device = p.device
         break
-    input_ = {}
-    for data in trainer.get_eval_dataloader():
-        for k, v in data.items():
-            if 'label' not in k and 'position' not in k:
-                input_[k] = v[:1].to(device)
-                print(k, input_[k].shape)
-        break
+    input_ = torch.randn((1, 3, 224, 224)).to(device)
     trainer.model.eval()
-    torch_out = trainer.model(**input_)
+    torch_out = trainer.model(input_)
+    print(torch_out)
     # Export the model
     torch.onnx.export(trainer.model,               # model being run
-                    tuple(input_.values()),                         # model input (or a tuple for multiple inputs)
+                    input_,                         # model input (or a tuple for multiple inputs)
                     Path(trainer.args.output_dir, "model.onnx").as_posix(),   # where to save the model (can be a file or file-like object)
                     export_params=True,        # store the trained parameter weights inside the model file
                     opset_version=11,          # the ONNX version to export the model to
                     do_constant_folding=True,  # whether to execute constant folding for optimization
-                    # input_names = ['input'],   # the model's input names
-                    # output_names = ['output'], # the model's output names
+                    input_names = ['pixel_values'],   # the model's input names
+                    output_names = ['logits'], # the model's output names
                     # dynamic_axes={'input' : {0 : 'batch_size'},    # variable length axes
                     #                 'output' : {0 : 'batch_size'}}
-    ) 
+    )
+    logger.info(f'ONNX exported to {trainer.args.output_dir}/model.onnx')
 
 
 

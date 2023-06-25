@@ -832,6 +832,8 @@ class ViTForImageClassification(ViTPreTrainedModel):
 
         # Initialize weights and apply final processing
         self.post_init()
+        import token_dropping
+        self.token_dropping_args: token_dropping.config.TokenDroppingConfig = config.token_dropping
 
     @add_start_docstrings_to_model_forward(VIT_INPUTS_DOCSTRING)
     @add_code_sample_docstrings(
@@ -870,10 +872,12 @@ class ViTForImageClassification(ViTPreTrainedModel):
         sequence_output = outputs[0]
 
         logits = self.classifier(sequence_output[:, 0, :])
-
-        loss = None
-        loss = torch.tensor(0., device=logits.device)
-        if labels is not None:
+        
+        if self.token_dropping_args.export_onnx:
+            loss = None
+        else:
+            loss = torch.tensor(0., device=logits.device)
+        if False: #labels is not None:
             if self.config.problem_type is None:
                 if self.num_labels == 1:
                     self.config.problem_type = "regression"

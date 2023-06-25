@@ -57,7 +57,7 @@ class RouterOursNewToken(torch.nn.Module):
         important_indices = torch.topk(importance_scores, K, dim=-1).indices  # [B, 15]
         important_token_mask = (
             torch.zeros((B, L), device=device, dtype=torch.bool)
-            .scatter_(dim=1, index=important_indices, value=True)
+            .scatter_(dim=1, index=important_indices, value=torch.tensor(True, dtype=torch.bool, device=device))
         )  # [B, L]
 
         new_token, _ = self.attention(
@@ -168,7 +168,7 @@ class RouterOursNoNew(torch.nn.Module):
         important_indices = torch.topk(importance_scores, K, dim=-1).indices  # [B, 15]
         important_token_mask = (
             torch.zeros((B, L), device=device, dtype=torch.bool)
-            .scatter_(dim=1, index=important_indices, value=True)
+            .scatter_(dim=1, index=important_indices, value=torch.tensor(True, dtype=torch.bool, device=device))
         )  # [B, L]
         final_token = hidden_states[important_token_mask].unsqueeze(dim=0)
         tome_size = torch.ones((B, final_token.shape[1], 1), device=device, dtype=dtype)
