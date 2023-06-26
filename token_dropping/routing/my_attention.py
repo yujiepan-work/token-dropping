@@ -22,14 +22,14 @@ class MyMultiHeadAttention(nn.Module):
         scores -- [h, N, T_q, T_k]
     '''
 
-    def __init__(self, query_dim, key_dim, num_units, num_heads, output_dim, query_augment: int = 1):
+    def __init__(self, query_dim, key_dim, num_units, num_heads, output_dim, query_augment: int = 1, Wq_bias=False):
 
         super().__init__()
         self.num_units = num_units
         self.num_heads = num_heads
         self.key_dim = key_dim
         self.query_augment = query_augment
-        self.W_query = nn.Linear(in_features=query_dim, out_features=num_units * query_augment, bias=False)
+        self.W_query = nn.Linear(in_features=query_dim, out_features=num_units * query_augment, bias=Wq_bias)
         self.W_key = nn.Linear(in_features=key_dim, out_features=num_units, bias=False)
         self.W_value = nn.Linear(in_features=key_dim, out_features=num_units, bias=False)
         self.W_output = nn.Linear(in_features=num_units, out_features=output_dim, bias=True)

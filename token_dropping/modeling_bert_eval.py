@@ -1694,7 +1694,8 @@ class BertForSequenceClassification(BertPreTrainedModel):
         logits = self.classifier(pooled_output)
 
         loss = None
-        loss = torch.tensor(0., device=logits.device)
+        if not self.config.token_dropping_args.export_onnx:
+            loss = torch.tensor(0., device=logits.device)
         labels = None
         if labels is not None:
             if self.config.problem_type is None:
