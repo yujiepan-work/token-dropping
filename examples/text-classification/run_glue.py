@@ -714,7 +714,7 @@ def export_model(trainer: Trainer):
         break
     input_ = torch.arange(384).reshape((1, 384)).long().to(device)
     trainer.model.eval()
-    torch_out = trainer.model(**input_)
+    torch_out = trainer.model(input_)
     # Export the model
     torch.onnx.export(trainer.model,               # model being run
                       input_,                        # model input (or a tuple for multiple inputs)

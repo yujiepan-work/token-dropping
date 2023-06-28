@@ -1670,7 +1670,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
         return_dict = True
 
         if input_ids.shape[0] == 1:  # i dont know why even with bs=1, there is still some mask
-            if attention_mask.float().mean() < 1.:
+            if attention_mask is not None and attention_mask.float().mean() < 1.:
                 attention_mask_bool = (attention_mask == 1)
                 input_ids = input_ids[None, attention_mask_bool]
                 token_type_ids = token_type_ids[None, attention_mask_bool]
