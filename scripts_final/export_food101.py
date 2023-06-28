@@ -8,10 +8,10 @@ from toytools.iterext import product
 from toytools.misc import today_cipher, json_dump
 from toytools.snapshot.log_python_env import log_python_env_status
 from token_dropping.config import TokenDroppingConfig
-from local_config import LOG_PATH, IS_PRC_MACHINE
+from local_config import LOG_PATH, IS_PRC_MACHINE, USER_NAME
 
 root = Path('.').absolute().parent
-config_path = Path('/tmp/yujiepan/token_dropping_config')
+config_path = Path(f'/tmp/{USER_NAME}/token_dropping_config')
 config_path.mkdir(exist_ok=True, parents=True)
 
 env = os.environ.copy()
@@ -41,6 +41,8 @@ def get_json(folder) -> dict:
 tasks = []
 for model in list(Path(LOG_PATH, 'train-food101/seed42/').glob('R*/R*')):
     folder = model / 'export_onnx'
+    if Path(folder, 'model.onnx').exists():
+        continue
     token_dropping_content: dict = get_json(model)
     token_dropping_content['reinit_router_weights'] = False
     token_dropping_content['is_benchmark_mode'] = True
