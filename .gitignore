@@ -5,6 +5,7 @@ mlruns/
 .vscode/
 scripts/
 logs_final/
+local_config.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

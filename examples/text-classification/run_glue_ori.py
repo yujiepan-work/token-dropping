@@ -448,7 +448,15 @@ def main():
         return result
 
     with training_args.main_process_first(desc="dataset map pre-processing"):
+        from pathlib import Path
+        long_imdb_dataset = datasets.load_from_disk(Path('~/imdb-long').expanduser())
         raw_datasets = raw_datasets.map(
+            preprocess_function,
+            batched=True,
+            load_from_cache_file=not data_args.overwrite_cache,
+            desc="Running tokenizer on dataset",
+        )
+        long_imdb_dataset = long_imdb_dataset.map(
             preprocess_function,
             batched=True,
             load_from_cache_file=not data_args.overwrite_cache,
@@ -465,7 +473,7 @@ def main():
     if training_args.do_eval:
         # if "validation" not in raw_datasets and "validation_matched" not in raw_datasets:
         #     raise ValueError("--do_eval requires a validation dataset")
-        eval_dataset = raw_datasets["validation_matched" if data_args.task_name == "mnli" else 'test' if data_args.dataset_name == 'imdb' else "validation"]
+        eval_dataset = raw_datasets["validation_matched" if data_args.task_name == "mnli" else 'test' if 'imdb' in data_args.dataset_name else "validation"]
         if data_args.max_eval_samples is not None:
             max_eval_samples = min(len(eval_dataset), data_args.max_eval_samples)
             eval_dataset = eval_dataset.select(range(max_eval_samples))
@@ -546,8 +554,8 @@ def main():
         logger.info("*** Evaluate ***")
 
         # Loop to handle MNLI double evaluation (matched, mis-matched)
-        tasks = [data_args.task_name]
-        eval_datasets = [eval_dataset]
+        tasks = [data_args.task_name, 'eval_long']
+        eval_datasets = [eval_dataset, long_imdb_dataset]
         if data_args.task_name == "mnli":
             tasks.append("mnli-mm")
             valid_mm_dataset = raw_datasets["validation_mismatched"]
@@ -571,7 +579,7 @@ def main():
                 combined.update(metrics)
 
             trainer.log_metrics("eval", metrics)
-            trainer.save_metrics("eval", combined if task is not None and "mnli" in task else metrics)
+            trainer.save_metrics(f"eval_{task}", combined if task is not None and "mnli" in task else metrics)
 
     if training_args.do_predict:
         logger.info("*** Predict ***")

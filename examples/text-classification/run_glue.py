@@ -278,6 +278,8 @@ def main():
     #
     # In distributed training, the load_dataset function guarantee that only one local process can concurrently
     # download the dataset.
+    from pathlib import Path
+    long_imdb_dataset = datasets.load_from_disk(Path('~/imdb-long').expanduser())
     if data_args.task_name is not None:
         # Downloading and loading a dataset from the hub.
         raw_datasets = load_dataset(
@@ -480,6 +482,12 @@ def main():
             load_from_cache_file=not data_args.overwrite_cache,
             desc="Running tokenizer on dataset",
         )
+        long_imdb_dataset = long_imdb_dataset.map(
+            preprocess_function,
+            batched=True,
+            load_from_cache_file=not data_args.overwrite_cache,
+            desc="Running tokenizer on dataset",
+        )
     if training_args.do_train:
         if "train" not in raw_datasets:
             raise ValueError("--do_train requires a train dataset")
@@ -657,6 +665,16 @@ def main():
                 f.write(str(end_time - start_time))
             trainer.log_metrics("eval", metrics)
             trainer.save_metrics("eval", combined if task is not None and "mnli" in task else metrics)
+
+        for _ in range(1):
+            eval_dataset = long_imdb_dataset
+            metrics = trainer.evaluate(eval_dataset=long_imdb_dataset)
+            max_eval_samples = (
+                data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)
+            )
+            metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
+            trainer.save_metrics("eval_long", metrics, False)
+
 
     if training_args.do_predict:
         logger.info("*** Predict ***")
