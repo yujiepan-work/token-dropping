@@ -310,6 +310,10 @@ def main():
                 m.bias.data[0].normal_(mean=5., std=0.02)
                 m.bias.data[1].normal_(mean=-5., std=0.02)
                 torch.nn.init.normal_(m.weight, 0., 0.02)
+
+    total_params = sum(p.numel() for p in model.parameters())
+    logger.info('TOTAL_PARAMETERS: %d', total_params)
+
     image_processor = AutoImageProcessor.from_pretrained(
         model_args.image_processor_name or model_args.model_name_or_path,
         cache_dir=model_args.cache_dir,
@@ -438,6 +442,8 @@ def export_model(trainer: Trainer):
     import torch
     import torch.onnx
     from pathlib import Path
+    if Path(trainer.args.output_dir, "model.onnx").exists():
+        return
     # Input to the model
     device = None
     for p in trainer.model.parameters():

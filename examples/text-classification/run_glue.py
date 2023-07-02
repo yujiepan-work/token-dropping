@@ -408,6 +408,9 @@ def main():
                 m.bias.data[1].normal_(mean=-5., std=0.02)
                 torch.nn.init.normal_(m.weight, 0., 0.02)
 
+    total_params = sum(p.numel() for p in model.parameters())
+    logger.info('TOTAL_PARAMETERS: %d', total_params)
+
     # Preprocessing the raw_datasets
     if data_args.task_name is not None:
         sentence1_key, sentence2_key = task_to_keys[data_args.task_name]
@@ -725,6 +728,9 @@ def export_model(trainer: Trainer):
     import torch
     import torch.onnx
     from pathlib import Path
+    onnx_path = Path(trainer.args.output_dir, "model.onnx")
+    if onnx_path.exists():
+        return
     # Input to the model
     device = None
     for p in trainer.model.parameters():
@@ -736,7 +742,7 @@ def export_model(trainer: Trainer):
     # Export the model
     torch.onnx.export(trainer.model,               # model being run
                       input_,                        # model input (or a tuple for multiple inputs)
-                      Path(trainer.args.output_dir, "model.onnx").as_posix(),   # where to save the model (can be a file or file-like object)
+                      onnx_path.as_posix(),   # where to save the model (can be a file or file-like object)
                       export_params=True,        # store the trained parameter weights inside the model file
                       opset_version=11,          # the ONNX version to export the model to
                       do_constant_folding=True,  # whether to execute constant folding for optimization
