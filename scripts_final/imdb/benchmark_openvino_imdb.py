@@ -26,7 +26,6 @@ REPO_ROOT = Path(__file__).parent.parent
 NUM_SAMPLES = 500
 
 
-
 def get_dataset():
     t = AutoTokenizer.from_pretrained(Path('~/bert-base-uncased-imdb').expanduser().as_posix())
     long_imdb_dataset = datasets.load_from_disk(Path('~/imdb-long').expanduser().as_posix())
@@ -38,11 +37,13 @@ def get_dataset():
         result.append(ids)
     return result
 
+
 dataset = get_dataset()
 print(dataset[0].shape)
 log.basicConfig(format='[ %(levelname)s ] %(message)s', level=log.INFO, stream=sys.stdout)
 log.info('OpenVINO:')
 log.info(f"{'Build ':.<39} {get_version()}")
+
 
 def benchmark_throughput(onnx_path):
     core = Core()
@@ -77,19 +78,27 @@ def benchmark_throughput(onnx_path):
     # log.info(f'Throughput: {fps:.2f} FPS')
 
     from datetime import datetime
-    now = datetime.now() # current date and time
+    now = datetime.now()  # current date and time
     return dict(onnx=onnx_path, duration=duration, throughput=fps,
                 datetime=now.strftime("%m-%d-%Y-%H-%M-%S"), num_samples=len(dataset), ov_version=get_version())
 
+
 def main():
-    items = []
+    onnx_paths = []
+    json_filename = f'benchmark_openvino_{NODE}.json'
     for folder in ['RouterTranskimmer']:
-        for onnx_path in tqdm(sorted(Path(LOG_PATH / 'train-imdb/seed42').glob(f'{folder}/**/export_onnx/model.onnx'))[::-1]):
-            onnx_path = onnx_path.absolute().as_posix()
-            item = benchmark_throughput(onnx_path)
-            with open(Path(onnx_path).parent / f'benchmark_openvino_{NODE}.json', 'w') as f:
-                import json
-                json.dump(item, f, indent=2)
-            print(item)
+        for onnx_path in sorted(Path(LOG_PATH / 'train-imdb/seed42').glob(f'{folder}/**/export_onnx/model.onnx'))[::-1]:
+            if Path(Path(onnx_path).parent / json_filename).exists():
+                continue
+            onnx_paths.append(onnx_path)
+
+    for onnx_path in tqdm(onnx_paths):
+        onnx_path = onnx_path.absolute().as_posix()
+        item = benchmark_throughput(onnx_path)
+        with open(Path(onnx_path).parent / json_filename, 'w') as f:
+            import json
+            json.dump(item, f, indent=2)
+        print(item)
+
 
 main()
