@@ -23,7 +23,7 @@ from transformers.onnx import export
 from transformers.onnx.features import FeaturesManager
 
 REPO_ROOT = Path(__file__).parent.parent
-NUM_SAMPLES = 500
+NUM_SAMPLES = 1500
 
 
 def get_dataset():
