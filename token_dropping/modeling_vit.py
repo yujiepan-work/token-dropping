@@ -216,11 +216,11 @@ class ViTSelfAttention(nn.Module):
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
 
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
-        # if tome_size is not None:
-        #     import token_dropping
-        #     token_dropping_config: token_dropping.config.TokenDroppingConfig = self.config.token_dropping
-        #     if token_dropping_config.tome_force_r > 0:
-        #         attention_scores = attention_scores + torch.log(tome_size)
+        if tome_size is not None:
+            import token_dropping
+            token_dropping_config: token_dropping.config.TokenDroppingConfig = self.config.token_dropping
+            if token_dropping_config.router_version == 'RouterToMeGlueUseKey':
+                attention_scores = attention_scores + torch.log(tome_size)
 
         # Normalize the attention scores to probabilities.
         attention_probs = nn.functional.softmax(attention_scores, dim=-1)

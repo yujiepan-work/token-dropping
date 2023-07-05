@@ -734,9 +734,14 @@ class BertEncoder(nn.Module):
                     learnable_01mask,
                 )
                 import random
-                if (i == 10) and (random.randint(0, 80) % 77 == 0 or original_length == 384):
-                    print(ori_seq_len[:10], 'after layer', i, 'preserve', learnable_01mask.sum(dim=-1)[:10].detach(), flush=True)
-                    print(ori_seq_len[:10], 'after layer', i, 'preserve hidden states', layer_outputs[0].shape, flush=True)
+                if (i == 10) and (random.randint(0, 80) % 77 == 0):
+                    w = ' '.join(map(str, (
+                        ori_seq_len[:10].flatten().tolist(), 'after layer', i,
+                        '\n\t\tlearnable mask sum', learnable_01mask.sum(dim=-1)[:10].flatten().tolist(),
+                        '\n\t\tattention mask sum', (new_attention_mask > -10.).float().sum(dim=-1)[:10].flatten().tolist(),
+                        '\n\t\thidden states shape', layer_outputs[0].shape,
+                    )))
+                    logger.warning(w)
 
             hidden_states = layer_outputs[0]
             if use_cache:

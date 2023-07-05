@@ -75,6 +75,12 @@ class TokenDroppingConfig:
     is_benchmark_mode: bool = field(
         default=False,
     )
+    ours_force_reduction_ratio: float = field(
+        default=-1.0,
+    )
+    ours_force_reduction_ratio_training: float = field(
+        default=-1.0,
+    )
 
     def __post_init__(self):
         strategy = self.token_pruning_strategy.replace('_', ',').replace('-', ':')

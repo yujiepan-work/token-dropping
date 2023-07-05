@@ -15,7 +15,7 @@ def clear_temp_storage():
 
 def do_final_clean(trainer: Trainer):
     output_dir = trainer.args.output_dir
-    torch.save(temp_storage, Path(output_dir, 'seq_len.pth'))
+    # torch.save(temp_storage, Path(output_dir, 'seq_len.pth'))
 
 
 class PreloadedDataset(Dataset):
