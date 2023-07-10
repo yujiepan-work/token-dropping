@@ -42,7 +42,7 @@ results = []
 from local_config import LOG_PATH, NODE
 from tqdm import tqdm
 
-logfile_name = f'benchmark_app_stdout_{NODE}_1'
+logfile_name = f'benchmark_app_stdout_try2'
 
 FOLDERS = [
     'RouterOursNewTokenMeanQ,freeze-True,ratio2drop,1e-4,256-16',
@@ -52,7 +52,7 @@ FOLDERS = [
 ]
 
 for folder in FOLDERS:
-    for model in tqdm(sorted(LOG_PATH.glob(f'train-food101/seed42/{folder}/**/export_onnx/model.onnx'))):
+    for model in tqdm(sorted(LOG_PATH.glob(f'train-food101*/seed42/{folder}/**/export_onnx/model.onnx'))):
         model = model.absolute()
         if (model.parent / (logfile_name + '.log')).exists():
             continue

@@ -13,7 +13,7 @@ root = Path('.').parent.absolute().parent.parent
 config_path = Path('/tmp/yujiepan/token_dropping_config')
 config_path.mkdir(exist_ok=True, parents=True)
 
-from local_config import LOG_PATH, USER_NAME, IS_PRC_MACHINE, NODE
+from local_config import LOG_PATH, USER_NAME, IS_PRC_MACHINE, NODE, BASELINE
 
 env = os.environ.copy()
 env["WANDB_DISABLED"] = "true"
@@ -70,14 +70,15 @@ cfgs = product(
     version=[
         'RouterToMeGlueUseKey'
     ],
-    # tome_last_len=[5, 10, 15, 20, 30, 40, 60, 80],
-    tome_last_len=[100, 150, 200, 250, 300, 350],
+    tome_last_len=[360, 370, 380],
     mask_loss_alpha=[0.],
 )
 
 tasks = []
 for cfg in list(cfgs):
-    folder = Path(LOG_PATH, 'train-imdb/seed42', f'{cfg.version}', f'{cfg.version},TM{cfg.tome_last_len}')
+    folder = Path(LOG_PATH, 'train-imdb/seed42new', f'{cfg.version}', f'{cfg.version},TM{cfg.tome_last_len}')
+    if (folder / 'README.md').exists():
+        continue
     token_dropping_json = json_dump(
         dict(
             token_pruning_strategy=cfg.strategy,
@@ -95,7 +96,7 @@ for cfg in list(cfgs):
     task = Task(
         cmd=["""python run_glue.py""",
              f"--token_dropping_json_path {token_dropping_json} ",
-             """--model_name_or_path ~/bert-base-uncased-imdb """,
+             f"""--model_name_or_path {BASELINE} """,
              '--dataset_name imdb.py ',
              "--pad_to_max_length False",
              f"""--do_eval \

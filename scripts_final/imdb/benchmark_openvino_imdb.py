@@ -13,7 +13,7 @@ import time
 from time import perf_counter
 import statistics
 from tqdm import tqdm
-from local_config import LOG_PATH, NODE
+from local_config import LOG_PATH, NODE, BASELINE
 import torch
 
 import datasets
@@ -27,7 +27,7 @@ NUM_SAMPLES = 1500
 
 
 def get_dataset():
-    t = AutoTokenizer.from_pretrained(Path('~/bert-base-uncased-imdb').expanduser().as_posix())
+    t = AutoTokenizer.from_pretrained(Path(BASELINE).expanduser().as_posix())
     long_imdb_dataset = datasets.load_from_disk(Path('~/imdb-long').expanduser().as_posix())
     result = []
     for i in tqdm(range(NUM_SAMPLES)):
@@ -86,8 +86,8 @@ def benchmark_throughput(onnx_path):
 def main():
     onnx_paths = []
     json_filename = f'benchmark_openvino_{NODE}.json'
-    for folder in ['RouterTranskimmer']:
-        for onnx_path in sorted(Path(LOG_PATH / 'train-imdb/seed42').glob(f'{folder}/**/export_onnx/model.onnx'))[::-1]:
+    for folder in ['RouterTranskimmer1e-4']:
+        for onnx_path in sorted(Path(LOG_PATH / 'train-imdb/seed42new').glob(f'{folder}/**/export_onnx/model.onnx'))[::-1]:
             if Path(Path(onnx_path).parent / json_filename).exists():
                 continue
             onnx_paths.append(onnx_path)

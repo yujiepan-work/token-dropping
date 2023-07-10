@@ -8,7 +8,7 @@ from toytools.iterext import product
 from toytools.misc import today_cipher, json_dump
 from toytools.snapshot.log_python_env import log_python_env_status
 from token_dropping.config import TokenDroppingConfig
-from local_config import LOG_PATH, IS_PRC_MACHINE
+from local_config import LOG_PATH, IS_PRC_MACHINE, BASELINE
 
 root = Path('.').absolute().parent.parent
 config_path = Path('/tmp/yujiepan/token_dropping_config')
@@ -38,24 +38,39 @@ def get_json(folder) -> dict:
                 return json.load(f)
 
 
+def load_json(path):
+    import jstyleson
+    from collections import defaultdict
+    if Path(path).exists():
+        with open(Path(path), 'r') as f:
+            return jstyleson.load(f)
+    return defaultdict(float)
+
+
 tasks = []
 for method_ in [
     # "RouterBaseline",
+    'RouterOursNewRatio*',
+    'RouterOursNewRatio-2drop',
     "RouterOursNewToken",
     "RouterOursNoNew",
     "RouterToMeGlueUseKey",
-    "RouterTranskimmer"
+    "RouterTranskimmer1e-4"
 ]:
-    for model in list(Path(LOG_PATH, 'train-imdb/seed42/').glob(f'{method_}/R*')):
+    for model in list(Path(LOG_PATH, 'train-imdb/seed42new/').glob(f'{method_}/R*')):
         folder = model / 'export_onnx'
         if Path(folder, 'model.onnx').exists():
             continue
+        if load_json(model / 'eval_long_results.json')['eval_accuracy'] < 0.886:
+            continue
         token_dropping_content: dict = get_json(model)
+        if token_dropping_content is None:
+            continue
         token_dropping_content['reinit_router_weights'] = False
         token_dropping_content['is_benchmark_mode'] = True
         token_dropping_content['export_onnx'] = True
         token_dropping_json = json_dump(token_dropping_content, temp_folder=config_path)
-        model_path = str(model.absolute().as_posix()) if Path(model, 'pytorch_model.bin').exists() else '~/bert-base-uncased-imdb'
+        model_path = str(model.absolute().as_posix()) if Path(model, 'pytorch_model.bin').exists() else BASELINE
         task = Task(
             cmd=["""python run_glue.py""",
                  f"--token_dropping_json_path {token_dropping_json} ",

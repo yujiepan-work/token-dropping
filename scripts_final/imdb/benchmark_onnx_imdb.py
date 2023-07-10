@@ -4,6 +4,7 @@ import subprocess
 from argparse import Namespace
 from dataclasses import dataclass
 from typing import List
+from pathlib import Path
 
 import pandas as pd
 
@@ -44,15 +45,18 @@ from tqdm import tqdm
 
 logfile_name = f'0702_benchmark_app_stdout_{NODE}_f32'
 FOLDERS = [
-    "RouterBaseline",
+    # "RouterBaseline",
+    'RouterOursNewRatio*',
+    'RouterOursNewTokenReductionRatio',
     "RouterOursNewToken",
     "RouterOursNoNew",
     "RouterToMeGlueUseKey",
-    "RouterTranskimmer"
+    "RouterTranskimmer*"
 ]
 
 for folder in FOLDERS:
-    for model in tqdm(sorted(LOG_PATH.glob(f'train-imdb/seed42/{folder}/**/export_onnx/model.onnx'))):
+    # for model in tqdm(sorted(LOG_PATH.glob(f'train-imdb/seed42new/{folder}/**/export_onnx/model.onnx'))):
+    for model in [Path('/nvme1/yujiepan/token-dropping-logs/logs-final/train-imdb/seed42new/RouterTranskimmer1e-4/RouterTranskimmer,0.12,-1.0,0-999_1-999_2-999_3-999_4-999_5-999_6-999_7-999_8-999_9-999_10-999_11-999,lr0.0001_warm0.0_epoch3_head256+64/export_onnx/model.onnx')]:
         model = model.absolute()
         if (model.parent / (logfile_name + '.log')).exists():
             continue

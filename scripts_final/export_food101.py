@@ -39,9 +39,10 @@ def get_json(folder) -> dict:
 
 
 tasks = []
-for model in list(Path(LOG_PATH, 'train-food101/seed42/').glob('R*/R*')):
+for model in list([Path('/nvme1/yujiepan/token-dropping-logs/logs-final/train-food101-add-tomesize/seed42/RouterToMeGlueUseKey,freeze-True/RouterToMeGlueUseKey,True,0.0,0-186_1-175_2-164_3-153_4-142_5-131_6-120_7-109_8-98_9-87_10-76_11-65,0.0001')]):
     folder = model / 'export_onnx'
     if Path(folder, 'model.onnx').exists():
+        print(folder)
         continue
     token_dropping_content: dict = get_json(model)
     token_dropping_content['reinit_router_weights'] = False

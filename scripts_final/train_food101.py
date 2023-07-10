@@ -104,7 +104,7 @@ def get_cfg_tasks(cfgs) -> List[Task]:
     tasks = []
     for cfg in list(cfgs):
         folder = Path(
-            LOG_PATH, 'train-food101', f'seed{cfg.seed}',
+            LOG_PATH, 'train-food101-add-tomesize', f'seed{cfg.seed}',
             f'{cfg.version},freeze-{cfg.freeze_bert}{cfg.note}',
             f'{cfg.version},{cfg.freeze_bert},{cfg.mask_loss_alpha},{cfg.strategy},{cfg.lr}'
         )
@@ -196,7 +196,7 @@ ours_nonewtoken_by_constant_r = new_cfg_tasks(
 
 # tome
 tome_cfgs = new_cfg_tasks(
-    strategy=[gen_gradual_strategy(r) for r in [0,1,2]], # [3, 6, 9, 12, 13, 15, 16]],
+    strategy=[gen_gradual_strategy(r) for r in [10,11]],
     version=['RouterToMeGlueUseKey'],
     mask_loss_alpha=[0.],
     freeze_bert=[True],
@@ -239,7 +239,7 @@ ours_1newtoken_by_ratio = new_cfg_tasks(
 
 # all_tasks = transkimmer_cfgs + ours_nonewtoken_by_constant_r + ours_nonewtoken_by_ratio + tome_cfgs + ours_1newtoken_by_ratio + ours_1newtoken_by_constant_r
 # all_tasks = ours_nonewtoken_by_ratio + ours_1newtoken_by_ratio
-all_tasks = ours_1newtoken_by_ratio
+all_tasks = tome_cfgs
 # all_tasks = ours_nonewtoken_by_ratio
 
 Launcher(avail_cuda_list(10000)).run(all_tasks, add_timestamp_to_log=False)

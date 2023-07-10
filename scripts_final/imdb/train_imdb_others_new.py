@@ -45,6 +45,24 @@ def gen_3drop(*p_l):
         res.append(f'{l}-{p}')
     return '_'.join(res)
 
+def gen_4drop(*p_l):
+    res = []
+    for l, p in zip([2, 4, 7, 9], p_l):
+        res.append(f'{l}-{p}')
+    return '_'.join(res)
+
+def gen_5drop(*p_l):
+    res = []
+    for l, p in zip([1,3,5,7,9], p_l):
+        res.append(f'{l}-{p}')
+    return '_'.join(res)
+
+def gen_2drop(*p_l):
+    res = []
+    for l, p in zip([3, 7], p_l):
+        res.append(f'{l}-{p}')
+    return '_'.join(res)
+
 
 def gen_all(preserve=100):
     res = []
@@ -62,7 +80,7 @@ def gen_nlp_tome():
 
 ours_cfgs = product(
     lr=[1e-4],
-    warmup_ratio=[0.0],
+    warmup_ratio=[0.1],
     strategy=[
         # gen_3drop(115, 34, 10),
         gen_3drop(153, 61, 24),
@@ -82,7 +100,31 @@ ours_cfgs = product(
     ],
     tome_last_len=[-1],
     mask_loss_alpha=[0.],
+    ours_force_reduction_ratio=[-1.],
 )
+
+ours_r_cfgs = product(
+    lr=[1e-4],
+    warmup_ratio=[0.0],
+    strategy=[
+        # gen_3drop(999, 999, 999),
+        # gen_2drop(999, 999),
+        gen_4drop(999,999,999,999),
+        # gen_5drop(999,999,999,999,999),
+    ],
+    title=['RouterOursNewRatio-4drop-train-reduce-more'],
+    version=[
+        'RouterOursNewTokenReductionRatio'
+    ],
+    tome_last_len=[-1],
+    mask_loss_alpha=[0.],
+    attention_head_dim=[32],
+    attention_unit=[256],
+    ours_force_reduction_ratio=[0.97, 0.98, 0.99],
+    ours_force_reduction_ratio_for_train=[0.90],
+    # ours_force_reduction_ratio=[0.21],
+)
+
 
 transkimmer_cfgs = product(
     lr=[1e-4],
@@ -90,37 +132,47 @@ transkimmer_cfgs = product(
     strategy=[
         gen_all(999),
     ],
+    title=['RouterTranskimmer1e-4'],
     version=[
         'RouterTranskimmer'
     ],
-    mask_loss_alpha=[0.325, 0.375, 0.425, 0.475],
+    mask_loss_alpha=[0.005, 0.015, 0.025, 0.035],
     tome_last_len=[-1],
+    attention_head_dim=[64],
+    attention_unit=[256],
+    ours_force_reduction_ratio=[-1.],
+    ours_force_reduction_ratio_for_train=[1.],
 )
 
 
-all_cfgs = list(ours_cfgs) + list(transkimmer_cfgs)
+# all_cfgs = list(ours_cfgs) + list(transkimmer_cfgs)
 # all_cfgs = list(transkimmer_cfgs)
+all_cfgs = list(transkimmer_cfgs)
+# all_cfgs = list(ours_r_cfgs)
 
 freeze_model_dict = {
     'RouterOursNoNew': True,
     'RouterOursNewToken': True,
+    'RouterOursNewTokenReductionRatio': True,
     'RouterTranskimmer': False,
 }
 
 router_before_ffn_dict = {
     'RouterOursNoNew': True,
     'RouterOursNewToken': True,
+    'RouterOursNewTokenReductionRatio': True,
     'RouterTranskimmer': False,
 }
 do_train_dict = {
     'RouterOursNoNew': False,
     'RouterOursNewToken': True,
+    'RouterOursNewTokenReductionRatio': True,
     'RouterTranskimmer': True,
 }
 
 tasks = []
 for cfg in list(all_cfgs)[:]:
-    folder = Path(LOG_PATH, f'train-imdb/seed42new/{cfg.version}/', f'{cfg.version},{cfg.mask_loss_alpha},{cfg.strategy},lr{cfg.lr}_warm{cfg.warmup_ratio}_epoch3')
+    folder = Path(LOG_PATH, f'train-imdb/seed42new/{cfg.title}/', f'{cfg.version},{cfg.mask_loss_alpha},{cfg.ours_force_reduction_ratio},{cfg.strategy},lr{cfg.lr}_warm{cfg.warmup_ratio}_epoch3_head{cfg.attention_unit}+{cfg.attention_head_dim}')
     token_dropping_json = json_dump(
         dict(
             token_pruning_strategy=cfg.strategy,
@@ -131,12 +183,16 @@ for cfg in list(all_cfgs)[:]:
             tome_last_len=cfg.tome_last_len,
             mask_loss_alpha=cfg.mask_loss_alpha,
             reinit_router_weights=True,
-            # attention_head_dim=16,
+            attention_head_dim=cfg.attention_head_dim,
+            attention_unit=cfg.attention_unit,
+            ours_force_reduction_ratio=cfg.ours_force_reduction_ratio,
+            ours_force_reduction_ratio_training=cfg.ours_force_reduction_ratio * cfg.ours_force_reduction_ratio_for_train,
         ),
         temp_folder=config_path,
     )
+    load_best = True if 'oursnew' in cfg.version.lower() else False
     task = Task(
-        cmd=["""python run_glue.py""",
+        cmd=["""python run_glue_new.py""",
              f"--token_dropping_json_path {token_dropping_json} ",
              f"""--model_name_or_path {BASELINE} """,
              '--dataset_name imdb.py ',
@@ -155,7 +211,7 @@ for cfg in list(all_cfgs)[:]:
             --save_strategy steps \
             --eval_steps 391 \
             --save_steps 391 \
-            --load_best_model_at_end False \
+            --load_best_model_at_end {load_best} \
             --metric_for_best_model accuracy \
             """],
         cwd=root / 'examples' / 'text-classification',
